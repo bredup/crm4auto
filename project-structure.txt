@@ -1,0 +1,133 @@
+.
+├── app
+│   ├── api
+│   │   ├── appointments
+│   │   │   ├── list
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── auth
+│   │   │   └── [...nextauth]
+│   │   │       └── route.ts
+│   │   ├── clients
+│   │   │   ├── route.ts
+│   │   │   └── search
+│   │   │       └── route.ts
+│   │   ├── dashboard
+│   │   │   └── stats
+│   │   │       └── route.ts
+│   │   ├── inventory
+│   │   │   ├── [id]
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── orders
+│   │   │   ├── [id]
+│   │   │   │   └── route.ts
+│   │   │   ├── recent
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── reports
+│   │   │   └── route.ts
+│   │   ├── services
+│   │   │   ├── [id]
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   ├── users
+│   │   │   ├── [id]
+│   │   │   │   └── route.ts
+│   │   │   └── route.ts
+│   │   └── vehicles
+│   │       └── route.ts
+│   ├── dashboard
+│   │   ├── appointments
+│   │   │   ├── AppointmentModal.tsx
+│   │   │   └── page.tsx
+│   │   ├── clients
+│   │   │   └── page.tsx
+│   │   ├── inventory
+│   │   │   └── page.tsx
+│   │   ├── layout.tsx
+│   │   ├── orders
+│   │   │   ├── [id]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── page.tsx
+│   │   ├── profile
+│   │   │   └── page.tsx
+│   │   ├── reports
+│   │   │   └── page.tsx
+│   │   ├── services
+│   │   │   └── page.tsx
+│   │   ├── settings
+│   │   │   └── page.tsx
+│   │   ├── users
+│   │   │   └── page.tsx
+│   │   └── vehicles
+│   │       └── page.tsx
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── login
+│   │   └── page.tsx
+│   └── page.tsx
+├── build
+├── components
+│   ├── charts
+│   ├── clients
+│   ├── dashboard
+│   ├── forms
+│   ├── layout
+│   │   ├── header.tsx
+│   │   └── sidebar.tsx
+│   ├── modals
+│   │   └── appointment-modal.tsx
+│   ├── providers
+│   │   └── auth-provider.tsx
+│   ├── providers.tsx
+│   ├── services
+│   │   └── edit-service-dialog.tsx
+│   └── ui
+│       ├── alert.tsx
+│       ├── avatar.tsx
+│       ├── badge.tsx
+│       ├── button.tsx
+│       ├── card.tsx
+│       ├── dialog.tsx
+│       ├── dropdown-menu.tsx
+│       ├── input.tsx
+│       ├── label.tsx
+│       ├── responsive-table.tsx
+│       ├── scroll-area.tsx
+│       ├── select.tsx
+│       └── textarea.tsx
+├── components.json
+├── --force
+├── lib
+│   ├── auth.ts
+│   ├── db.ts
+│   ├── prisma.ts
+│   ├── utils.ts
+│   └── validations
+├── middleware.ts
+├── nano.694868.save
+├── next
+├── next.config.js
+├── next-env.d.ts
+├── omponents
+│   └── modals
+│       └── appointment-modal.tsx
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── prisma
+│   ├── schema.prisma
+│   └── seed.ts
+├── project-structure.txt
+├── public
+│   └── uploads
+├── README.md
+├── route.ts
+├── tailwind.config.js
+├── tsconfig.json
+└── types
+    └── next-auth.d.ts
+
+53 directories, 78 files

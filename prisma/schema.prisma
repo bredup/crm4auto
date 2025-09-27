@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String        @id @default(cuid())
+  name                 String?
+  email                String        @unique
+  password             String?
+  role                 UserRole      @default(EMPLOYEE)
+  active               Boolean       @default(true)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  assignedAppointments Appointment[] @relation("AssignedAppointments")
+  createdAppointments  Appointment[] @relation("CreatedAppointments")
+  assignedOrders       Order[]       @relation("AssignedToUser")
+  createdOrders        Order[]       @relation("CreatedByUser")
+
+  @@map("users")
+}
+
+model Client {
+  id           String        @id @default(cuid())
+  name         String
+  email        String?
+  phone        String
+  address      String?
+  notes        String?       @db.Text
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  appointments Appointment[]
+  orders       Order[]
+  vehicles     Vehicle[]
+
+  @@map("clients")
+}
+
+model Vehicle {
+  id           String        @id @default(cuid())
+  clientId     String
+  brand        String
+  model        String
+  year         Int
+  vin          String?       @unique
+  licensePlate String?
+  color        String?
+  mileage      Int?
+  notes        String?       @db.Text
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  appointments Appointment[]
+  orders       Order[]
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId], map: "vehicles_clientId_fkey")
+  @@map("vehicles")
+}
+
+model Service {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  description  String?       @db.Text
+  price        Decimal       @db.Decimal(10, 2)
+  duration     Int?
+  active       Boolean       @default(true)
+  category     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  appointments Appointment[]
+
+  @@map("services")
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  clientId      String
+  vehicleId     String?
+  createdById   String
+  assignedToId  String?
+  description   String      @db.Text
+  status        OrderStatus @default(RECEIVED)
+  priority      Priority    @default(NORMAL)
+  estimatedCost Decimal?    @db.Decimal(10, 2)
+  finalCost     Decimal?    @db.Decimal(10, 2)
+  estimatedDate DateTime?
+  completedDate DateTime?
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  assignedTo    User?       @relation("AssignedToUser", fields: [assignedToId], references: [id])
+  client        Client      @relation(fields: [clientId], references: [id])
+  createdBy     User        @relation("CreatedByUser", fields: [createdById], references: [id])
+  vehicle       Vehicle?    @relation(fields: [vehicleId], references: [id])
+
+  @@index([assignedToId], map: "orders_assignedToId_fkey")
+  @@index([clientId], map: "orders_clientId_fkey")
+  @@index([createdById], map: "orders_createdById_fkey")
+  @@index([vehicleId], map: "orders_vehicleId_fkey")
+  @@map("orders")
+}
+
+model InventoryItem {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  sku         String?  @unique
+  price       Decimal  @db.Decimal(10, 2)
+  cost        Decimal? @db.Decimal(10, 2)
+  quantity    Int      @default(0)
+  minQuantity Int      @default(0)
+  category    String?
+  supplier    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("inventory_items")
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  clientId        String
+  vehicleId       String?
+  serviceId       String
+  appointmentDate DateTime
+  startTime       String
+  endTime         String
+  status          AppointmentStatus @default(SCHEDULED)
+  notes           String?           @db.Text
+  assignedUserId  String?
+  createdById     String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @default(now()) @updatedAt
+  assignedUser    User?             @relation("AssignedAppointments", fields: [assignedUserId], references: [id], onUpdate: NoAction)
+  client          Client            @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy       User              @relation("CreatedAppointments", fields: [createdById], references: [id], onUpdate: NoAction)
+  service         Service           @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
+  vehicle         Vehicle?          @relation(fields: [vehicleId], references: [id], onUpdate: NoAction)
+
+  @@index([assignedUserId], map: "appointments_assignedUserId_fkey")
+  @@index([clientId], map: "appointments_clientId_fkey")
+  @@index([createdById], map: "appointments_createdById_fkey")
+  @@index([serviceId], map: "appointments_serviceId_fkey")
+  @@index([vehicleId], map: "appointments_vehicleId_fkey")
+  @@map("appointments")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum OrderStatus {
+  RECEIVED
+  IN_PROGRESS
+  WAITING_PARTS
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
