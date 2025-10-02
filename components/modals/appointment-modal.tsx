@@ -1,859 +1,571 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Search, User, Car, Clock, Plus, X, ChevronLeft, ChevronRight, Phone, Mail, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { useState, useEffect } from 'react'
+import { X, Search, User, Plus, Clock, Calendar, Wrench } from 'lucide-react'
 
-interface Client {
-  id: number;
-  name: string;
-  phone: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
+interface AppointmentModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSuccess?: () => void
+  selectedDate?: string
 }
 
-interface Vehicle {
-  id: number;
-  clientId: number;
-  make: string;
-  model: string;
-  year: number;
-  licensePlate: string;
+interface Client {
+  id: string
+  name: string
+  phone: string
+  email?: string
 }
 
 interface Service {
-  id: number;
-  name: string;
-  description?: string;
-  price: number;
-  duration: number; // в минутах
-  category: string;
+  id: string
+  name: string
+  price: number
+  duration: number
+  category: string
 }
 
-interface Appointment {
-  id?: number;
-  clientId: number;
-  vehicleId: number;
-  serviceId: number;
-  scheduledDate: string;
-  scheduledTime: string;
-  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-  notes?: string;
-  estimatedCost: number;
-}
-
-interface AppointmentModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess?: () => void;
-  selectedDate?: string;
-  appointment?: Appointment; // Для редактирования существующей записи
-}
-
-type Step = 1 | 2 | 3;
-
-export function AppointmentModal({ 
-  isOpen, 
-  onClose, 
-  onSuccess, 
-  selectedDate,
-  appointment 
-}: AppointmentModalProps) {
-  const [currentStep, setCurrentStep] = useState<Step>(1);
-  const [loading, setLoading] = useState(false);
+export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: AppointmentModalProps) {
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(false)
   
-  // Состояние для поиска клиентов
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Client[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  
-  // Состояние для нового клиента
+  // Шаг 1: Клиент
+  const [searchQuery, setSearchQuery] = useState('')
+  const [clients, setClients] = useState<Client[]>([])
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [isCreatingClient, setIsCreatingClient] = useState(false)
   const [newClientData, setNewClientData] = useState({
     firstName: '',
     lastName: '',
     phone: '',
     email: ''
-  });
-  const [showNewClientForm, setShowNewClientForm] = useState(false);
+  })
   
-  // Состояние для автомобилей
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
-  const [newVehicleData, setNewVehicleData] = useState({
-    make: '',
-    model: '',
-    year: new Date().getFullYear(),
-    licensePlate: ''
-  });
-  const [showNewVehicleForm, setShowNewVehicleForm] = useState(false);
-  
-  // Состояние для записи
-  const [services, setServices] = useState<Service[]>([]);
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [appointmentTime, setAppointmentTime] = useState('09:00');
-  const [notes, setNotes] = useState('');
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  // Шаг 2: Детали записи
+  const [serviceSearch, setServiceSearch] = useState('')
+  const [services, setServices] = useState<Service[]>([])
+  const [filteredServices, setFilteredServices] = useState<Service[]>([])
+  const [appointmentData, setAppointmentData] = useState({
+    date: selectedDate || new Date().toISOString().split('T')[0],
+    startTime: '09:00',
+    endTime: '10:00',
+    serviceId: '',
+    status: 'SCHEDULED'
+  })
 
-  // Загрузка услуг при открытии модала
   useEffect(() => {
     if (isOpen) {
-      loadServices();
-      if (appointment) {
-        // Загружаем данные для редактирования
-        loadAppointmentData();
-      } else {
-        // Сброс формы для новой записи
-        resetForm();
-      }
+      loadServices()
+      resetForm()
     }
-  }, [isOpen, appointment]);
+  }, [isOpen])
 
-  // Поиск клиентов с debounce
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchQuery.trim().length >= 2) {
-        searchClients();
-      } else {
-        setSearchResults([]);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  // Загрузка автомобилей при выборе клиента
-  useEffect(() => {
-    if (selectedClient) {
-      loadClientVehicles();
+    if (selectedDate) {
+      setAppointmentData(prev => ({ ...prev, date: selectedDate }))
     }
-  }, [selectedClient]);
+  }, [selectedDate])
 
-  // Загрузка свободных слотов при выборе даты и услуги
   useEffect(() => {
-    if (selectedDate && selectedService) {
-      loadAvailableSlots();
+    if (serviceSearch) {
+      const filtered = services.filter(service => 
+        service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+        service.category.toLowerCase().includes(serviceSearch.toLowerCase())
+      )
+      setFilteredServices(filtered)
+    } else {
+      setFilteredServices(services)
     }
-  }, [selectedDate, selectedService]);
-
-  const resetForm = () => {
-    setCurrentStep(1);
-    setSelectedClient(null);
-    setSelectedVehicle(null);
-    setSelectedService(null);
-    setSearchQuery('');
-    setSearchResults([]);
-    setNotes('');
-    setAppointmentTime('09:00');
-    setShowNewClientForm(false);
-    setShowNewVehicleForm(false);
-    setNewClientData({ firstName: '', lastName: '', phone: '', email: '' });
-    setNewVehicleData({ make: '', model: '', year: new Date().getFullYear(), licensePlate: '' });
-  };
+  }, [serviceSearch, services])
 
   const loadServices = async () => {
     try {
-      const response = await fetch('/api/services');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setServices(data.services || data);
-        }
+      const response = await fetch('/api/services')
+      const data = await response.json()
+      if (data.success) {
+        setServices(data.services)
+        setFilteredServices(data.services)
       }
     } catch (error) {
-      console.error('Ошибка загрузки услуг:', error);
+      console.error('Ошибка загрузки услуг:', error)
     }
-  };
+  }
 
-  const searchClients = async () => {
-    setSearchLoading(true);
+  const searchClients = async (query: string) => {
+    if (!query.trim()) {
+      setClients([])
+      return
+    }
+
     try {
-      const response = await fetch(`/api/clients?search=${encodeURIComponent(searchQuery)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          // Обеспечиваем, что у каждого клиента есть поле name
-          const clientsWithNames = data.clients.map((client: any) => ({
-            ...client,
-            name: client.name || `${client.firstName || ''} ${client.lastName || ''}`.trim()
-          }));
-          setSearchResults(clientsWithNames);
-        }
+      setLoading(true)
+      const response = await fetch(`/api/clients?search=${encodeURIComponent(query)}`)
+      const data = await response.json()
+      if (data.success) {
+        setClients(data.clients)
       }
     } catch (error) {
-      console.error('Ошибка поиска клиентов:', error);
+      console.error('Ошибка поиска клиентов:', error)
     } finally {
-      setSearchLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   const createClient = async () => {
     if (!newClientData.firstName || !newClientData.lastName || !newClientData.phone) {
-      alert('Пожалуйста, заполните все обязательные поля');
-      return;
+      alert('Заполните все обязательные поля')
+      return
     }
-    
-    setLoading(true);
+
     try {
+      setLoading(true)
       const response = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newClientData)
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          const newClient = {
-            ...data.client,
-            name: `${data.client.firstName} ${data.client.lastName}`.trim()
-          };
-          setSelectedClient(newClient);
-          setShowNewClientForm(false);
-          setNewClientData({ firstName: '', lastName: '', phone: '', email: '' });
-          setCurrentStep(2);
-        } else {
-          alert(data.error || 'Ошибка создания клиента');
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        const clientWithName = {
+          ...data.client,
+          name: `${data.client.firstName || ''} ${data.client.lastName || ''}`.trim() || data.client.name
         }
+        setSelectedClient(clientWithName)
+        setIsCreatingClient(false)
+      } else {
+        alert(data.error || 'Ошибка создания клиента')
       }
     } catch (error) {
-      console.error('Ошибка создания клиента:', error);
-      alert('Ошибка создания клиента');
+      console.error('Ошибка:', error)
+      alert('Ошибка создания клиента')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const loadClientVehicles = async () => {
-    if (!selectedClient) return;
+  const handleServiceSelect = (serviceId: string) => {
+    setAppointmentData(prev => ({ ...prev, serviceId }))
     
-    try {
-      const response = await fetch(`/api/clients/${selectedClient.id}/vehicles`);
-      if (response.ok) {
-        const data = await response.json();
-        setVehicles(data || []);
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки автомобилей:', error);
-      setVehicles([]);
+    const service = services.find(s => s.id === serviceId)
+    if (service) {
+      const [hours, minutes] = appointmentData.startTime.split(':').map(Number)
+      const startMinutes = hours * 60 + minutes
+      const endMinutes = startMinutes + service.duration
+      const endHours = Math.floor(endMinutes / 60)
+      const endMins = endMinutes % 60
+      const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`
+      
+      setAppointmentData(prev => ({ ...prev, endTime }))
     }
-  };
+  }
 
-  const createVehicle = async () => {
-    if (!selectedClient || !newVehicleData.make || !newVehicleData.model) {
-      alert('Пожалуйста, заполните марку и модель автомобиля');
-      return;
+  const handleSubmit = async () => {
+    if (!selectedClient || !appointmentData.serviceId) {
+      alert('Заполните все обязательные поля')
+      return
     }
-    
-    setLoading(true);
+
     try {
-      const response = await fetch('/api/vehicles', {
+      setLoading(true)
+      const response = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...newVehicleData,
-          clientId: selectedClient.id
+          clientId: selectedClient.id,
+          serviceId: appointmentData.serviceId,
+          date: appointmentData.date,
+          startTime: appointmentData.startTime,
+          endTime: appointmentData.endTime,
+          status: appointmentData.status
         })
-      });
-      
-      if (response.ok) {
-        const newVehicle = await response.json();
-        setVehicles([...vehicles, newVehicle]);
-        setSelectedVehicle(newVehicle);
-        setShowNewVehicleForm(false);
-        setNewVehicleData({ make: '', model: '', year: new Date().getFullYear(), licensePlate: '' });
+      })
+
+      const data = await response.json()
+      if (response.ok && data.success) {
+        alert('Запись успешно создана!')
+        onSuccess?.()
+        onClose()
+      } else {
+        alert(data.error || 'Ошибка создания записи')
       }
     } catch (error) {
-      console.error('Ошибка создания автомобиля:', error);
-      alert('Ошибка создания автомобиля');
+      console.error('Ошибка:', error)
+      alert('Ошибка создания записи')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  const loadAvailableSlots = async () => {
-    if (!selectedDate || !selectedService) return;
-    
-    try {
-      const response = await fetch(`/api/appointments/available-slots?date=${selectedDate}&duration=${selectedService.duration}`);
-      if (response.ok) {
-        const data = await response.json();
-        setAvailableSlots(data.slots || []);
-      }
-    } catch (error) {
-      console.error('Ошибка загрузки свободных слотов:', error);
-    }
-  };
-
-  const createAppointment = async () => {
-    if (!selectedClient || !selectedVehicle || !selectedService || !selectedDate) {
-      alert('Пожалуйста, заполните все необходимые поля');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const appointmentData = {
-        clientId: selectedClient.id.toString(),
-        vehicleId: selectedVehicle.id.toString(),
-        serviceId: selectedService.id.toString(),
-        date: selectedDate,
-        startTime: appointmentTime,
-        // Вычисляем время окончания на основе длительности услуги
-        endTime: calculateEndTime(appointmentTime, selectedService.duration),
-        status: 'SCHEDULED',
-        notes,
-        estimatedCost: selectedService.price
-      };
-
-      const url = appointment ? `/api/appointments/${appointment.id}` : '/api/appointments';
-      const method = appointment ? 'PUT' : 'POST';
-      
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(appointmentData)
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          alert('Запись успешно создана!');
-          onSuccess?.();
-          handleClose();
-        } else {
-          alert(data.error || 'Ошибка при создании записи');
-        }
-      }
-    } catch (error) {
-      console.error('Ошибка создания записи:', error);
-      alert('Ошибка создания записи');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const calculateEndTime = (startTime: string, duration: number): string => {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const startMinutes = hours * 60 + minutes;
-    const endMinutes = startMinutes + duration;
-    const endHours = Math.floor(endMinutes / 60);
-    const endMins = endMinutes % 60;
-    return `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
-  };
-
-  const loadAppointmentData = async () => {
-    if (!appointment) return;
-    // Здесь можно загрузить данные для редактирования
-  };
+  const resetForm = () => {
+    setStep(1)
+    setSearchQuery('')
+    setClients([])
+    setSelectedClient(null)
+    setIsCreatingClient(false)
+    setServiceSearch('')
+    setAppointmentData({
+      date: selectedDate || new Date().toISOString().split('T')[0],
+      startTime: '09:00',
+      endTime: '10:00',
+      serviceId: '',
+      status: 'SCHEDULED'
+    })
+    setNewClientData({
+      firstName: '',
+      lastName: '',
+      phone: '',
+      email: ''
+    })
+  }
 
   const handleClose = () => {
-    resetForm();
-    onClose();
-  };
+    resetForm()
+    onClose()
+  }
 
-  const nextStep = () => {
-    if (currentStep < 3) setCurrentStep((prev) => (prev + 1) as Step);
-  };
+  if (!isOpen) return null
 
-  const prevStep = () => {
-    if (currentStep > 1) setCurrentStep((prev) => (prev - 1) as Step);
-  };
-
-  const canProceedToStep2 = selectedClient !== null;
-  const canProceedToStep3 = selectedClient && selectedVehicle;
-  const canCreateAppointment = selectedClient && selectedVehicle && selectedService && selectedDate;
+  const selectedService = services.find(s => s.id === appointmentData.serviceId)
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center justify-between">
-            <span>
-              {appointment ? 'Редактирование записи' : 'Новая запись в автосервис'}
-            </span>
-            <div className="flex items-center space-x-2 text-sm">
-              <Badge variant={currentStep === 1 ? "default" : currentStep > 1 ? "secondary" : "outline"}>
-                1. Клиент
-              </Badge>
-              <Badge variant={currentStep === 2 ? "default" : currentStep > 2 ? "secondary" : "outline"}>
-                2. Автомобиль
-              </Badge>
-              <Badge variant={currentStep === 3 ? "default" : "outline"}>
-                3. Запись
-              </Badge>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+        {/* Шапка */}
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Новая запись</h2>
+            <p className="text-sm text-gray-500 mt-1">Шаг {step} из 2</p>
+          </div>
+          <button
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Прогресс */}
+        <div className="px-6 py-4 bg-gray-50">
+          <div className="flex items-center justify-between relative">
+            <div className="absolute top-5 left-0 right-0 h-1 bg-gray-200">
+              <div 
+                className="h-full bg-blue-600 transition-all duration-300"
+                style={{ width: `${((step - 1) / 1) * 100}%` }}
+              />
             </div>
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6">
-          {/* ШАГ 1: Выбор клиента */}
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2 text-lg font-medium">
-                <User className="h-5 w-5" />
-                <span>Выберите клиента</span>
-              </div>
-
-              {!showNewClientForm ? (
-                <>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Поиск по имени или телефону..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-
-                  {searchLoading && (
-                    <div className="text-center text-muted-foreground py-4">Поиск...</div>
-                  )}
-
-                  {searchResults.length > 0 && (
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {searchResults.map((client) => (
-                        <Card
-                          key={client.id}
-                          className="cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => {
-                            setSelectedClient(client);
-                            setCurrentStep(2);
-                          }}
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-medium">{client.name}</div>
-                                <div className="text-sm text-muted-foreground flex items-center space-x-4">
-                                  <span className="flex items-center">
-                                    <Phone className="h-3 w-3 mr-1" />
-                                    {client.phone}
-                                  </span>
-                                  {client.email && (
-                                    <span className="flex items-center">
-                                      <Mail className="h-3 w-3 mr-1" />
-                                      {client.email}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-
-                  {selectedClient && (
-                    <Card className="bg-muted/20">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-medium text-green-700">✓ Выбран клиент:</div>
-                            <div className="font-medium">{selectedClient.name}</div>
-                            <div className="text-sm text-muted-foreground">{selectedClient.phone}</div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedClient(null)}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowNewClientForm(true)}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Добавить нового клиента
-                  </Button>
-                </>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Новый клиент</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="client-first-name">Имя *</Label>
-                        <Input
-                          id="client-first-name"
-                          value={newClientData.firstName}
-                          onChange={(e) => setNewClientData({...newClientData, firstName: e.target.value})}
-                          placeholder="Введите имя"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="client-last-name">Фамилия *</Label>
-                        <Input
-                          id="client-last-name"
-                          value={newClientData.lastName}
-                          onChange={(e) => setNewClientData({...newClientData, lastName: e.target.value})}
-                          placeholder="Введите фамилию"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="client-phone">Телефон *</Label>
-                      <Input
-                        id="client-phone"
-                        value={newClientData.phone}
-                        onChange={(e) => setNewClientData({...newClientData, phone: e.target.value})}
-                        placeholder="+7 (999) 123-45-67"
-                      />
-                    </div>
-                    
-                    <div>
-                      <Label htmlFor="client-email">Email</Label>
-                      <Input
-                        id="client-email"
-                        type="email"
-                        value={newClientData.email}
-                        onChange={(e) => setNewClientData({...newClientData, email: e.target.value})}
-                        placeholder="client@example.com"
-                      />
-                    </div>
-
-                    <div className="flex space-x-2">
-                      <Button onClick={createClient} disabled={loading}>
-                        {loading ? 'Создание...' : 'Создать клиента'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowNewClientForm(false)}
-                      >
-                        Отмена
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-
-          {/* ШАГ 2: Выбор автомобиля */}
-          {currentStep === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2 text-lg font-medium">
-                <Car className="h-5 w-5" />
-                <span>Выберите автомобиль</span>
-              </div>
-
-              {selectedClient && (
-                <Card className="bg-muted/20">
-                  <CardContent className="p-3">
-                    <span className="text-sm text-muted-foreground">Клиент: </span>
-                    <span className="font-medium">{selectedClient.name}</span>
-                  </CardContent>
-                </Card>
-              )}
-
-              {!showNewVehicleForm ? (
-                <>
-                  {vehicles.length > 0 && (
-                    <div className="space-y-2">
-                      {vehicles.map((vehicle) => (
-                        <Card
-                          key={vehicle.id}
-                          className={`cursor-pointer transition-colors ${
-                            selectedVehicle?.id === vehicle.id 
-                              ? 'border-primary bg-primary/5' 
-                              : 'hover:bg-muted/50'
-                          }`}
-                          onClick={() => setSelectedVehicle(vehicle)}
-                        >
-                          <CardContent className="p-4">
-                            <div className="font-medium">
-                              {vehicle.make} {vehicle.model} ({vehicle.year})
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              Гос. номер: {vehicle.licensePlate || 'не указан'}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-
-                  {vehicles.length === 0 && (
-                    <div className="text-center text-muted-foreground py-4">
-                      У клиента пока нет зарегистрированных автомобилей
-                    </div>
-                  )}
-
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowNewVehicleForm(true)}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Добавить новый автомобиль
-                  </Button>
-                </>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Новый автомобиль</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="vehicle-make">Марка *</Label>
-                        <Input
-                          id="vehicle-make"
-                          value={newVehicleData.make}
-                          onChange={(e) => setNewVehicleData({...newVehicleData, make: e.target.value})}
-                          placeholder="Toyota, BMW, Lada..."
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="vehicle-model">Модель *</Label>
-                        <Input
-                          id="vehicle-model"
-                          value={newVehicleData.model}
-                          onChange={(e) => setNewVehicleData({...newVehicleData, model: e.target.value})}
-                          placeholder="Camry, X5, Granta..."
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="vehicle-year">Год выпуска</Label>
-                        <Input
-                          id="vehicle-year"
-                          type="number"
-                          min="1900"
-                          max={new Date().getFullYear() + 1}
-                          value={newVehicleData.year}
-                          onChange={(e) => setNewVehicleData({...newVehicleData, year: parseInt(e.target.value)})}
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="vehicle-plate">Гос. номер</Label>
-                        <Input
-                          id="vehicle-plate"
-                          value={newVehicleData.licensePlate}
-                          onChange={(e) => setNewVehicleData({...newVehicleData, licensePlate: e.target.value.toUpperCase()})}
-                          placeholder="А123БВ77"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex space-x-2">
-                      <Button onClick={createVehicle} disabled={loading}>
-                        {loading ? 'Добавление...' : 'Добавить автомобиль'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowNewVehicleForm(false)}
-                      >
-                        Отмена
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-
-          {/* ШАГ 3: Детали записи */}
-          {currentStep === 3 && (
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2 text-lg font-medium">
-                <Clock className="h-5 w-5" />
-                <span>Детали записи</span>
-              </div>
-
-              <Card className="bg-muted/20">
-                <CardContent className="p-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Клиент: </span>
-                      <span className="font-medium">{selectedClient?.name}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Автомобиль: </span>
-                      <span className="font-medium">
-                        {selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model}` : ''}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="service">Услуга *</Label>
-                  <Select value={selectedService?.id.toString() || ''} onValueChange={(value) => {
-                    const service = services.find(s => s.id === parseInt(value));
-                    setSelectedService(service || null);
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите услугу" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {services.map((service) => (
-                        <SelectItem key={service.id} value={service.id.toString()}>
-                          <div className="flex justify-between items-center w-full">
-                            <span>{service.name}</span>
-                            <span className="text-muted-foreground ml-4">
-                              {service.price} ₽ • {service.duration}мин
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            
+            {[1, 2].map((num) => (
+              <div key={num} className="flex flex-col items-center relative z-10">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
+                  step >= num ? 'bg-blue-600 text-white' : 'bg-white border-2 border-gray-300 text-gray-400'
+                }`}>
+                  {num}
                 </div>
+                <span className="text-xs mt-2 text-gray-600 font-medium">
+                  {num === 1 ? 'Клиент' : 'Детали'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="date">Дата записи</Label>
-                    <div className="flex items-center space-x-2">
-                      <Calendar className="h-4 w-4" />
-                      <Input
-                        id="date"
-                        type="date"
-                        value={selectedDate || ''}
-                        disabled
-                      />
+        {/* Контент */}
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-250px)]">
+          {/* Шаг 1: Клиент */}
+          {step === 1 && !isCreatingClient && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <User className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Выберите клиента</h3>
+              </div>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Поиск по имени или телефону..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    searchClients(e.target.value)
+                  }}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {selectedClient ? (
+                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-gray-900">{selectedClient.name}</p>
+                      <p className="text-sm text-gray-600">{selectedClient.phone}</p>
+                      {selectedClient.email && (
+                        <p className="text-sm text-gray-500">{selectedClient.email}</p>
+                      )}
                     </div>
+                    <button
+                      onClick={() => setSelectedClient(null)}
+                      className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                    >
+                      Изменить
+                    </button>
                   </div>
-                  
-                  <div>
-                    <Label htmlFor="time">Время записи</Label>
-                    <Select value={appointmentTime} onValueChange={setAppointmentTime}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableSlots.length > 0 ? (
-                          availableSlots.map((slot) => (
-                            <SelectItem key={slot} value={slot}>
-                              {slot}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          Array.from({ length: 18 }, (_, i) => {
-                            const hour = 9 + Math.floor(i / 2);
-                            const minute = (i % 2) * 30;
-                            const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-                            return (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            );
-                          })
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {clients.map((client) => (
+                      <div
+                        key={client.id}
+                        onClick={() => setSelectedClient(client)}
+                        className="p-4 border border-gray-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-all"
+                      >
+                        <p className="font-semibold text-gray-900">{client.name}</p>
+                        <p className="text-sm text-gray-600">{client.phone}</p>
+                        {client.email && (
+                          <p className="text-sm text-gray-500">{client.email}</p>
                         )}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    ))}
+                    {searchQuery.length >= 2 && clients.length === 0 && !loading && (
+                      <p className="text-center text-gray-500 py-8">Клиенты не найдены</p>
+                    )}
+                    {searchQuery.length < 2 && (
+                      <p className="text-center text-gray-500 py-8">Введите минимум 2 символа для поиска</p>
+                    )}
+                    {loading && (
+                      <p className="text-center text-gray-500 py-8">Поиск...</p>
+                    )}
                   </div>
+
+                  <div className="text-center pt-4">
+                    <button
+                      onClick={() => setIsCreatingClient(true)}
+                      className="inline-flex items-center px-4 py-2 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Создать нового клиента
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Форма создания клиента */}
+          {step === 1 && isCreatingClient && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <User className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Новый клиент</h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Имя *</label>
+                  <input
+                    type="text"
+                    value={newClientData.firstName}
+                    onChange={(e) => setNewClientData(prev => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Иван"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Фамилия *</label>
+                  <input
+                    type="text"
+                    value={newClientData.lastName}
+                    onChange={(e) => setNewClientData(prev => ({ ...prev, lastName: e.target.value }))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Иванов"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Телефон *</label>
+                <input
+                  type="tel"
+                  value={newClientData.phone}
+                  onChange={(e) => setNewClientData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+7 (999) 123-45-67"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={newClientData.email}
+                  onChange={(e) => setNewClientData(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="client@example.com"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setIsCreatingClient(false)}
+                  className="flex-1 px-5 py-2.5 text-gray-700 hover:bg-gray-200 rounded-xl transition-colors font-medium"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={createClient}
+                  disabled={loading}
+                  className="flex-1 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+                >
+                  {loading ? 'Создание...' : 'Создать'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Шаг 2: Детали записи */}
+          {step === 2 && (
+            <div className="space-y-6">
+              {/* Услуга с поиском */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Wrench className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">Выберите услугу</h3>
                 </div>
 
-                <div>
-                  <Label htmlFor="notes">Примечания</Label>
-                  <Textarea
-                    id="notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Дополнительная информация о записи..."
-                    rows={3}
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Поиск услуги..."
+                    value={serviceSearch}
+                    onChange={(e) => setServiceSearch(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
-                {selectedService && (
-                  <Card className="bg-blue-50 border-blue-200">
-                    <CardHeader>
-                      <CardTitle className="text-base">Сводка записи</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>Услуга:</span>
-                        <span className="font-medium">{selectedService.name}</span>
+                <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+                  {filteredServices.map((service) => (
+                    <div
+                      key={service.id}
+                      onClick={() => handleServiceSelect(service.id)}
+                      className={`p-4 border rounded-xl cursor-pointer transition-all ${
+                        appointmentData.serviceId === service.id
+                          ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-200'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-gray-900">{service.name}</p>
+                          <p className="text-xs text-gray-500">{service.category}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-gray-900">{service.price.toLocaleString()} ₽</p>
+                          <p className="text-xs text-gray-500">{service.duration} мин</p>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span>Длительность:</span>
-                        <span>{selectedService.duration} минут</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Дата и время:</span>
-                        <span>
-                          {selectedDate && format(new Date(selectedDate), 'dd MMMM yyyy', { locale: ru })} в {appointmentTime}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Время окончания:</span>
-                        <span>{calculateEndTime(appointmentTime, selectedService.duration)}</span>
-                      </div>
-                      <div className="flex justify-between font-medium text-lg">
-                        <span>Стоимость:</span>
-                        <span className="text-green-600">{selectedService.price} ₽</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Навигация между шагами */}
-          <div className="flex justify-between pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={prevStep}
-              disabled={currentStep === 1}
-            >
-              <ChevronLeft className="h-4 w-4 mr-2" />
-              Назад
-            </Button>
+              {/* Дата и время */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Calendar className="inline w-4 h-4 mr-1" />
+                    Дата
+                  </label>
+                  <input
+                    type="date"
+                    value={appointmentData.date}
+                    onChange={(e) => setAppointmentData(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
 
-            <div className="flex space-x-2">
-              {currentStep < 3 ? (
-                <Button
-                  onClick={nextStep}
-                  disabled={
-                    (currentStep === 1 && !canProceedToStep2) ||
-                    (currentStep === 2 && !canProceedToStep3)
-                  }
-                >
-                  Далее
-                  <ChevronRight className="h-4 w-4 ml-2" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={createAppointment}
-                  disabled={!canCreateAppointment || loading}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {loading ? 'Сохранение...' : (appointment ? 'Сохранить изменения' : 'Создать запись')}
-                </Button>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Clock className="inline w-4 h-4 mr-1" />
+                    Начало
+                  </label>
+                  <input
+                    type="time"
+                    value={appointmentData.startTime}
+                    onChange={(e) => setAppointmentData(prev => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Clock className="inline w-4 h-4 mr-1" />
+                    Конец
+                  </label>
+                  <input
+                    type="time"
+                    value={appointmentData.endTime}
+                    onChange={(e) => setAppointmentData(prev => ({ ...prev, endTime: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Итоговая информация */}
+              {selectedService && (
+                <div className="p-4 bg-gray-50 rounded-xl">
+                  <p className="text-sm text-gray-700 mb-2">Итого:</p>
+                  <p className="text-2xl font-bold text-gray-900">{selectedService.price.toLocaleString()} ₽</p>
+                  <p className="text-sm text-gray-500">Длительность: {selectedService.duration} минут</p>
+                </div>
               )}
             </div>
+          )}
+        </div>
+
+        {/* Футер */}
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+          <div>
+            {step > 1 && !isCreatingClient && (
+              <button
+                onClick={() => setStep(step - 1)}
+                className="px-5 py-2.5 text-gray-700 hover:bg-gray-200 rounded-xl transition-colors font-medium"
+              >
+                Назад
+              </button>
+            )}
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={handleClose}
+              className="px-5 py-2.5 text-gray-700 hover:bg-gray-200 rounded-xl transition-colors font-medium"
+            >
+              Отмена
+            </button>
+            
+            {step < 2 && !isCreatingClient ? (
+              <button
+                onClick={() => setStep(2)}
+                disabled={!selectedClient}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Далее
+              </button>
+            ) : step === 2 ? (
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !appointmentData.serviceId}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Создание...' : 'Создать запись'}
+              </button>
+            ) : null}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
+      </div>
+    </div>
+  )
 }

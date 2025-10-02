@@ -1,114 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
+// GET - получить автомобили клиента
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { searchParams } = new URL(request.url);
+    const clientId = searchParams.get('clientId');
+
+    if (!clientId) {
+      return NextResponse.json(
+        { success: false, error: 'clientId обязателен' }, 
+        { status: 400 }
+      );
     }
 
-    const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '10')
-    const search = searchParams.get('search') || ''
-    const clientId = searchParams.get('clientId')
+    console.log('🚗 Загрузка автомобилей для клиента:', clientId);
 
-    let where: any = {}
-    
-    if (clientId) {
-      where.clientId = clientId
-    }
-    
-    if (search) {
-      where.OR = [
-        { brand: { contains: search } },
-        { model: { contains: search } },
-        { licensePlate: { contains: search } },
-        { vin: { contains: search } },
-        { client: { name: { contains: search } } }
-      ]
-    }
+    const vehicles = await db.vehicle.findMany({
+      where: { clientId },
+      orderBy: { brand: 'asc' }
+    });
 
-    const [vehicles, total] = await Promise.all([
-      db.vehicle.findMany({
-        where,
-        include: {
-          client: {
-            select: { id: true, name: true, phone: true }
-          },
-          orders: {
-            select: { id: true, status: true }
-          }
-        },
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' }
-      }),
-      db.vehicle.count({ where })
-    ])
+    console.log(`✅ Найдено автомобилей: ${vehicles.length}`);
 
-    const vehiclesWithCounts = vehicles.map(vehicle => ({
-      ...vehicle,
-      ordersCount: vehicle.orders.length,
-      activeOrdersCount: vehicle.orders.filter(order => order.status !== 'COMPLETED').length
-    }))
-
-    return NextResponse.json({
-      vehicles: vehiclesWithCounts,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    })
+    return NextResponse.json({ success: true, vehicles });
   } catch (error) {
-    console.error('Error fetching vehicles:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('❌ Ошибка получения автомобилей:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка получения автомобилей' }, 
+      { status: 500 }
+    );
   }
 }
 
-export async function POST(request: NextRequest) {
+// DELETE - удалить автомобиль
+export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'ID автомобиля обязателен' },
+        { status: 400 }
+      );
     }
 
-    const body = await request.json()
-    const { clientId, brand, model, year, vin, licensePlate, color, mileage, notes } = body
+    console.log('🗑️ Удаление автомобиля:', id);
 
-    if (!clientId || !brand || !model || !year) {
-      return NextResponse.json({ 
-        error: 'Client, brand, model and year are required' 
-      }, { status: 400 })
-    }
+    await db.vehicle.delete({
+      where: { id }
+    });
 
-    const vehicle = await db.vehicle.create({
-      data: {
-        clientId,
-        brand,
-        model,
-        year: parseInt(year),
-        vin: vin || null,
-        licensePlate: licensePlate || null,
-        color: color || null,
-        mileage: mileage ? parseInt(mileage) : null,
-        notes: notes || null
-      },
-      include: {
-        client: {
-          select: { name: true, phone: true }
-        }
-      }
-    })
+    console.log('✅ Автомобиль удалён');
 
-    return NextResponse.json(vehicle, { status: 201 })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error creating vehicle:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('❌ Ошибка удаления автомобиля:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка удаления автомобиля' },
+      { status: 500 }
+    );
   }
 }

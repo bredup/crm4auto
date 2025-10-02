@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Calendar, Clock, User, Car, Filter, RefreshCw, Phone, Mail } from 'lucide-react';
-import AppointmentModal from './AppointmentModal';
+import { Plus, Calendar, Clock, User, Car, Filter, RefreshCw, Phone, Mail, Edit } from 'lucide-react';
+import { AppointmentModal } from '@/components/modals/appointment-modal';
+import { EditAppointmentModal } from '@/components/modals/edit-appointment-modal';
 
 interface Client {
-  id: number;
+  id: string;
   name: string;
   firstName: string;
   lastName: string;
@@ -14,14 +15,14 @@ interface Client {
 }
 
 interface Service {
-  id: number;
+  id: string;
   name: string;
   price: number;
   duration: number;
 }
 
 interface Appointment {
-  id: number;
+  id: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -53,8 +54,10 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [filters, setFilters] = useState({
-    status: 'all',
+    status: 'active', // По умолчанию показываем активные
     date: ''
   });
   const [refreshing, setRefreshing] = useState(false);
@@ -68,16 +71,21 @@ export default function AppointmentsPage() {
       setLoading(true);
       setError('');
 
-      // Строим URL с параметрами фильтрации
       const params = new URLSearchParams();
-      if (filters.status !== 'all') {
-        params.append('status', filters.status);
+      
+      // Фильтр по статусу
+      if (filters.status === 'active') {
+        // Будем фильтровать активные на клиенте после получения
+      } else if (filters.status === 'cancelled') {
+        params.append('status', 'cancelled');
+      } else if (filters.status === 'completed') {
+        params.append('status', 'completed');
       }
+      
       if (filters.date) {
         params.append('date', filters.date);
       }
 
-      // Используем основной API /api/appointments вместо /api/appointments/list
       const response = await fetch(`/api/appointments?${params.toString()}`);
       
       if (!response.ok) {
@@ -88,7 +96,16 @@ export default function AppointmentsPage() {
       console.log('Fetched appointments:', data);
 
       if (data.success) {
-        setAppointments(data.appointments || []);
+        let fetchedAppointments = data.appointments || [];
+        
+        // Фильтруем активные на клиенте
+        if (filters.status === 'active') {
+          fetchedAppointments = fetchedAppointments.filter(
+            (apt: Appointment) => !['cancelled', 'completed'].includes(apt.status.toLowerCase())
+          );
+        }
+        
+        setAppointments(fetchedAppointments);
       } else {
         throw new Error(data.error || 'Ошибка при загрузке записей');
       }
@@ -107,7 +124,56 @@ export default function AppointmentsPage() {
   };
 
   const handleModalSuccess = () => {
-    fetchAppointments(); // Обновляем список после создания записи
+    fetchAppointments();
+  };
+
+  const handleEditAppointment = (appointment: Appointment) => {
+    console.log('✏️ Открытие редактирования:', appointment.id);
+    setSelectedAppointment(appointment);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSuccess = () => {
+    console.log('✅ Запись обновлена');
+    fetchAppointments();
+    setIsEditModalOpen(false);
+    setSelectedAppointment(null);
+  };
+
+  const handleCancelAppointment = async (appointmentId: string) => {
+    console.log('🔴 Отмена записи:', appointmentId);
+    
+    if (!confirm('Вы уверены, что хотите отменить эту запись?')) {
+      console.log('❌ Отмена отменена пользователем');
+      return;
+    }
+
+    try {
+      console.log('📤 Отправка PATCH запроса...');
+      const response = await fetch('/api/appointments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: appointmentId,
+          status: 'CANCELLED'
+        })
+      });
+
+      console.log('📥 Ответ получен:', response.status);
+      const data = await response.json();
+      console.log('📥 Данные:', data);
+
+      if (data.success) {
+        console.log('✅ Запись отменена успешно');
+        fetchAppointments();
+      } else {
+        console.error('❌ Ошибка от API:', data.error);
+        alert(data.error || 'Ошибка отмены записи');
+      }
+    } catch (error) {
+      console.error('❌ Ошибка запроса:', error);
+      alert('Ошибка отмены записи');
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -171,43 +237,63 @@ export default function AppointmentsPage() {
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center space-x-4">
-          <Filter className="w-5 h-5 text-gray-400" />
-          
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">Статус:</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Все статусы</option>
-              <option value="scheduled">Запланированы</option>
-              <option value="confirmed">Подтверждены</option>
-              <option value="in_progress">В работе</option>
-              <option value="completed">Завершены</option>
-              <option value="cancelled">Отменены</option>
-            </select>
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Filter className="w-5 h-5 text-gray-400" />
+            
+            {/* Переключатель Активные/Отменённые */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFilters({ ...filters, status: 'active' })}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filters.status === 'active'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Активные записи
+              </button>
+              <button
+                onClick={() => setFilters({ ...filters, status: 'cancelled' })}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filters.status === 'cancelled'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Отменённые
+              </button>
+              <button
+                onClick={() => setFilters({ ...filters, status: 'completed' })}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filters.status === 'completed'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                Завершённые
+              </button>
+            </div>
 
-          <div className="flex items-center space-x-2">
-            <label className="text-sm font-medium text-gray-700">Дата:</label>
-            <input
-              type="date"
-              value={filters.date}
-              onChange={(e) => setFilters(prev => ({ ...prev, date: e.target.value }))}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">Дата:</label>
+              <input
+                type="date"
+                value={filters.date}
+                onChange={(e) => setFilters(prev => ({ ...prev, date: e.target.value }))}
+                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
 
-          {(filters.status !== 'all' || filters.date) && (
-            <button
-              onClick={() => setFilters({ status: 'all', date: '' })}
-              className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-            >
-              Сбросить фильтры
-            </button>
-          )}
+            {filters.date && (
+              <button
+                onClick={() => setFilters({ ...filters, date: '' })}
+                className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                Сбросить дату
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -235,8 +321,12 @@ export default function AppointmentsPage() {
             <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Записей не найдено</h3>
             <p className="text-gray-600 mb-4">
-              {filters.status !== 'all' || filters.date 
-                ? 'Попробуйте изменить фильтры или' 
+              {filters.status === 'cancelled' 
+                ? 'Нет отменённых записей' 
+                : filters.status === 'completed'
+                ? 'Нет завершённых записей'
+                : filters.date
+                ? 'Нет записей на выбранную дату' 
                 : 'Создайте первую запись для клиента'}
             </p>
             <button
@@ -273,7 +363,7 @@ export default function AppointmentsPage() {
                       <div className="flex items-center text-gray-800">
                         <User className="w-4 h-4 mr-2 text-gray-400" />
                         <span className="font-medium">
-                          {appointment.client.firstName} {appointment.client.lastName}
+                          {appointment.client.name}
                         </span>
                       </div>
                       
@@ -304,13 +394,34 @@ export default function AppointmentsPage() {
                   {/* Actions */}
                   <div className="ml-4 flex-shrink-0">
                     <div className="flex items-center space-x-2">
-                      <button className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors">
-                        Изменить
-                      </button>
-                      <span className="text-gray-300">|</span>
-                      <button className="text-red-600 hover:text-red-800 text-sm font-medium transition-colors">
-                        Отменить
-                      </button>
+                      {appointment.status.toLowerCase() !== 'cancelled' && 
+                       appointment.status.toLowerCase() !== 'completed' && (
+                        <>
+                          <button 
+                            onClick={() => handleEditAppointment(appointment)}
+                            className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors flex items-center gap-1"
+                          >
+                            <Edit size={14} />
+                            Изменить
+                          </button>
+                          
+                          <span className="text-gray-300">|</span>
+                          
+                          <button 
+                            onClick={() => handleCancelAppointment(appointment.id)}
+                            className="text-red-600 hover:text-red-800 text-sm font-medium transition-colors"
+                          >
+                            Отменить
+                          </button>
+                        </>
+                      )}
+                      
+                      {(appointment.status.toLowerCase() === 'cancelled' || 
+                        appointment.status.toLowerCase() === 'completed') && (
+                        <span className="text-gray-400 text-sm">
+                          {appointment.status.toLowerCase() === 'completed' ? 'Завершена' : 'Отменена'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -325,20 +436,30 @@ export default function AppointmentsPage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between text-sm text-gray-600">
             <div>
-              Всего записей: <span className="font-medium text-gray-900">{appointments.length}</span>
+              {filters.status === 'active' && 'Активных записей: '}
+              {filters.status === 'cancelled' && 'Отменённых записей: '}
+              {filters.status === 'completed' && 'Завершённых записей: '}
+              <span className="font-medium text-gray-900">{appointments.length}</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <span>
-                Активных: <span className="font-medium text-blue-600">
-                  {appointments.filter(a => ['scheduled', 'confirmed', 'in_progress'].includes(a.status)).length}
+            {filters.status === 'active' && (
+              <div className="flex items-center space-x-4">
+                <span>
+                  Запланировано: <span className="font-medium text-blue-600">
+                    {appointments.filter(a => a.status === 'scheduled').length}
+                  </span>
                 </span>
-              </span>
-              <span>
-                Завершенных: <span className="font-medium text-green-600">
-                  {appointments.filter(a => a.status === 'completed').length}
+                <span>
+                  Подтверждено: <span className="font-medium text-green-600">
+                    {appointments.filter(a => a.status === 'confirmed').length}
+                  </span>
                 </span>
-              </span>
-            </div>
+                <span>
+                  В работе: <span className="font-medium text-yellow-600">
+                    {appointments.filter(a => a.status === 'in_progress').length}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -348,6 +469,17 @@ export default function AppointmentsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleModalSuccess}
+      />
+
+      {/* Edit Appointment Modal */}
+      <EditAppointmentModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setSelectedAppointment(null);
+        }}
+        appointment={selectedAppointment}
+        onSuccess={handleEditSuccess}
       />
     </div>
   );

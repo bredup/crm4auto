@@ -1,182 +1,168 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
+// GET - получить всех клиентов или с фильтром
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')
-    const limit = parseInt(searchParams.get('limit') || '10')
-    const withVehicles = searchParams.get('withVehicles') === 'true'
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get('search');
 
-    console.log('🔍 Поиск клиентов:', { search, limit })
-
-    // Если поиск для модального окна записи (короткий запрос)
+    let whereClause = {};
+    
     if (search && search.length >= 2) {
-      const clients = await db.client.findMany({
-        where: {
-          OR: [
-            {
-              name: {
-                contains: search
-              }
-            },
-            {
-              phone: {
-                contains: search.replace(/\D/g, '') // убираем все символы кроме цифр
-              }
-            },
-            {
-              email: {
-                contains: search
-              }
-            }
-          ]
-        },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          email: true
-        },
-        take: limit,
-        orderBy: {
-          name: 'asc'
-        }
-      })
-
-      console.log(`✅ Найдено клиентов: ${clients.length}`)
-      // Возвращаем простой массив для модального окна
-      return NextResponse.json(clients)
+      whereClause = {
+        OR: [
+          { name: { contains: search } },
+          { phone: { contains: search } },
+          { email: { contains: search } }
+        ]
+      };
     }
 
-    // Обычный запрос для списка клиентов (с пагинацией)
-    const page = parseInt(searchParams.get('page') || '1')
-    const where = search ? {
-      OR: [
-        { name: { contains: search } },
-        { email: { contains: search } },
-        { phone: { contains: search } }
-      ]
-    } : {}
-
-    const include: any = {
-      vehicles: withVehicles ? {
-        select: { 
-          id: true, 
-          brand: true, 
-          model: true, 
-          year: true, 
-          licensePlate: true 
+    const clients = await db.client.findMany({
+      where: whereClause,
+      include: {
+        vehicles: true,
+        _count: {
+          select: {
+            appointments: true
+          }
         }
-      } : {
-        select: { id: true }
       },
-      orders: {
-        select: { id: true }
-      }
-    }
+      orderBy: { name: 'asc' }
+    });
 
-    const [clients, total] = await Promise.all([
-      db.client.findMany({
-        where,
-        include,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: withVehicles ? { name: 'asc' } : { createdAt: 'desc' }
-      }),
-      db.client.count({ where })
-    ])
-
-    // Форматируем клиентов для фронтенда
-    const formattedClients = clients.map(client => ({
-      id: client.id,
-      name: client.name,
-      phone: client.phone,
-      email: client.email,
-      address: client.address,
-      notes: client.notes,
-      createdAt: client.createdAt.toISOString(),
-      updatedAt: client.updatedAt.toISOString(),
-      vehiclesCount: client.vehicles.length,
-      ordersCount: client.orders.length,
-      ...(withVehicles && {
-        vehicles: client.vehicles.map((vehicle: any) => ({
-          id: vehicle.id,
-          make: vehicle.brand,
-          model: vehicle.model,
-          year: vehicle.year,
-          plateNumber: vehicle.licensePlate,
-          fullInfo: `${vehicle.brand} ${vehicle.model} ${vehicle.year}${vehicle.licensePlate ? ` (${vehicle.licensePlate})` : ''}`
-        }))
-      })
-    }))
-
-    return NextResponse.json({
-      clients: formattedClients,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    })
-
+    return NextResponse.json({ success: true, clients });
   } catch (error) {
-    console.error('❌ Ошибка поиска клиентов:', error)
+    console.error('Error fetching clients:', error);
     return NextResponse.json(
-      { error: 'Ошибка поиска клиентов' },
+      { success: false, error: 'Ошибка получения клиентов' },
       { status: 500 }
-    )
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { name, email, phone, address, notes, vehicle } = body
+    const body = await request.json();
+    const { name, phone, email, address, notes } = body;
 
     if (!name || !phone) {
-      return NextResponse.json({ 
-        error: 'Name and phone are required' 
-      }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: 'Имя и телефон обязательны' },
+        { status: 400 }
+      );
     }
 
-    console.log('🆕 Создание клиента:', { name, phone, email })
+    console.log('🆕 Создание клиента:', { name, phone, email });
 
-    // Проверяем уникальность телефона
+    // Проверяем существование клиента с таким телефоном
     const existingClient = await db.client.findFirst({
       where: { phone }
-    })
+    });
 
     if (existingClient) {
+      console.log('ℹ️ Клиент с таким телефоном уже существует, возвращаем его');
+      // ВАЖНО: Возвращаем существующего клиента вместо ошибки
       return NextResponse.json({ 
-        error: 'Client with this phone already exists' 
-      }, { status: 409 })
+        success: true, 
+        client: {
+          id: existingClient.id,
+          name: existingClient.name,
+          phone: existingClient.phone,
+          email: existingClient.email
+        },
+        message: 'Клиент с таким телефоном уже существует'
+      }, { status: 200 });
     }
 
-    // Создаем клиента
+    // Создаём нового клиента
     const client = await db.client.create({
       data: {
         name,
-        email: email || null,
         phone,
+        email: email || null,
         address: address || null,
         notes: notes || null
       }
-    })
+    });
 
-    console.log('✅ Клиент создан:', client)
+    console.log('✅ Клиент создан:', client.id);
 
-    // Возвращаем данные в формате, ожидаемом модальным окном
     return NextResponse.json({
-      id: client.id,
-      name: client.name,
-      phone: client.phone,
-      email: client.email
-    }, { status: 201 })
+      success: true,
+      client: {
+        id: client.id,
+        name: client.name,
+        phone: client.phone,
+        email: client.email
+      }
+    }, { status: 201 });
 
   } catch (error) {
-    console.error('❌ Ошибка создания клиента:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('❌ Ошибка создания клиента:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка создания клиента' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH - обновить клиента
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, name, phone, email } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'ID клиента обязателен' },
+        { status: 400 }
+      );
+    }
+
+    const client = await db.client.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(phone && { phone }),
+        ...(email !== undefined && { email })
+      }
+    });
+
+    return NextResponse.json({ success: true, client });
+  } catch (error) {
+    console.error('Error updating client:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка обновления клиента' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - удалить клиента
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'ID клиента обязателен' },
+        { status: 400 }
+      );
+    }
+
+    await db.client.delete({
+      where: { id }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting client:', error);
+    return NextResponse.json(
+      { success: false, error: 'Ошибка удаления клиента' },
+      { status: 500 }
+    );
   }
 }
