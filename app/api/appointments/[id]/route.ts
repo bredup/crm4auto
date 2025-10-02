@@ -9,6 +9,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const params = await context.params;
+  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
@@ -44,6 +45,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> }
 ) {
   const params = await context.params;
+  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
@@ -118,6 +120,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   const params = await context.params;
+  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {

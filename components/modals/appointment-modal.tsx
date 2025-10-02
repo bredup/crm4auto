@@ -1,237 +1,213 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { X, Search, User, Plus, Clock, Calendar, Wrench } from 'lucide-react'
-
-interface AppointmentModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSuccess?: () => void
-  selectedDate?: string
-}
+import { useState, useEffect } from 'react';
+import { X, Search, User, Plus } from 'lucide-react';
+import { format, parse, addMinutes } from 'date-fns';
 
 interface Client {
-  id: string
-  name: string
-  phone: string
-  email?: string
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
 }
 
 interface Service {
-  id: string
-  name: string
-  price: number
-  duration: number
-  category: string
+  id: string;
+  name: string;
+  duration: number;
+  price: number;
+  category: string;
+}
+
+interface AppointmentModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  selectedDate?: Date | string;
 }
 
 export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: AppointmentModalProps) {
-  const [step, setStep] = useState(1)
-  const [loading, setLoading] = useState(false)
-  
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+
   // Шаг 1: Клиент
-  const [searchQuery, setSearchQuery] = useState('')
-  const [clients, setClients] = useState<Client[]>([])
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
-  const [isCreatingClient, setIsCreatingClient] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [newClientData, setNewClientData] = useState({
     firstName: '',
     lastName: '',
     phone: '',
     email: ''
-  })
-  
-  // Шаг 2: Детали записи
-  const [serviceSearch, setServiceSearch] = useState('')
-  const [services, setServices] = useState<Service[]>([])
-  const [filteredServices, setFilteredServices] = useState<Service[]>([])
-  const [appointmentData, setAppointmentData] = useState({
-    date: selectedDate || new Date().toISOString().split('T')[0],
-    startTime: '09:00',
-    endTime: '10:00',
-    serviceId: '',
-    status: 'SCHEDULED'
-  })
+  });
+
+  // Шаг 2: Детали
+  const [services, setServices] = useState<Service[]>([]);
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [appointmentDate, setAppointmentDate] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('10:00');
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (isOpen) {
-      loadServices()
-      resetForm()
+      loadServices();
+      resetForm();
+      // Предзаполнение даты
+      if (selectedDate) {
+        const dateStr = selectedDate instanceof Date 
+          ? format(selectedDate, 'yyyy-MM-dd')
+          : selectedDate;
+        setAppointmentDate(dateStr);
+      } else {
+        setAppointmentDate(new Date().toISOString().split('T')[0]);
+      }
     }
-  }, [isOpen])
+  }, [isOpen, selectedDate]);
 
-  useEffect(() => {
-    if (selectedDate) {
-      setAppointmentData(prev => ({ ...prev, date: selectedDate }))
+  // Поиск клиентов
+  const searchClients = async (query: string) => {
+    if (!query.trim() || query.length < 2) {
+      setClients([]);
+      return;
     }
-  }, [selectedDate])
 
-  useEffect(() => {
-    if (serviceSearch) {
-      const filtered = services.filter(service => 
-        service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-        service.category.toLowerCase().includes(serviceSearch.toLowerCase())
-      )
-      setFilteredServices(filtered)
-    } else {
-      setFilteredServices(services)
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/clients?search=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (data.success) {
+        setClients(data.clients || []);
+      }
+    } catch (error) {
+      console.error('Ошибка поиска клиентов:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [serviceSearch, services])
+  };
 
   const loadServices = async () => {
     try {
-      const response = await fetch('/api/services')
-      const data = await response.json()
+      const response = await fetch('/api/services');
+      const data = await response.json();
       if (data.success) {
-        setServices(data.services)
-        setFilteredServices(data.services)
+        setServices(data.services || []);
       }
     } catch (error) {
-      console.error('Ошибка загрузки услуг:', error)
+      console.error('Ошибка загрузки услуг:', error);
     }
-  }
+  };
 
-  const searchClients = async (query: string) => {
-    if (!query.trim()) {
-      setClients([])
-      return
+  // Расчёт времени окончания
+  useEffect(() => {
+    if (startTime && selectedService) {
+      const start = parse(startTime, 'HH:mm', new Date());
+      const end = addMinutes(start, selectedService.duration);
+      setEndTime(format(end, 'HH:mm'));
     }
-
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/clients?search=${encodeURIComponent(query)}`)
-      const data = await response.json()
-      if (data.success) {
-        setClients(data.clients)
-      }
-    } catch (error) {
-      console.error('Ошибка поиска клиентов:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [startTime, selectedService]);
 
   const createClient = async () => {
     if (!newClientData.firstName || !newClientData.lastName || !newClientData.phone) {
-      alert('Заполните все обязательные поля')
-      return
+      alert('Заполните все обязательные поля');
+      return;
     }
 
     try {
-      setLoading(true)
+      setLoading(true);
       const response = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newClientData)
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
       if (data.success) {
         const clientWithName = {
           ...data.client,
           name: `${data.client.firstName || ''} ${data.client.lastName || ''}`.trim() || data.client.name
-        }
-        setSelectedClient(clientWithName)
-        setIsCreatingClient(false)
+        };
+        setSelectedClient(clientWithName);
+        setIsCreatingClient(false);
       } else {
-        alert(data.error || 'Ошибка создания клиента')
+        alert(data.error || 'Ошибка создания клиента');
       }
     } catch (error) {
-      console.error('Ошибка:', error)
-      alert('Ошибка создания клиента')
+      console.error('Ошибка:', error);
+      alert('Ошибка создания клиента');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-
-  const handleServiceSelect = (serviceId: string) => {
-    setAppointmentData(prev => ({ ...prev, serviceId }))
-    
-    const service = services.find(s => s.id === serviceId)
-    if (service) {
-      const [hours, minutes] = appointmentData.startTime.split(':').map(Number)
-      const startMinutes = hours * 60 + minutes
-      const endMinutes = startMinutes + service.duration
-      const endHours = Math.floor(endMinutes / 60)
-      const endMins = endMinutes % 60
-      const endTime = `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`
-      
-      setAppointmentData(prev => ({ ...prev, endTime }))
-    }
-  }
+  };
 
   const handleSubmit = async () => {
-    if (!selectedClient || !appointmentData.serviceId) {
-      alert('Заполните все обязательные поля')
-      return
+    if (!selectedClient || !selectedService || !appointmentDate || !startTime) {
+      alert('Заполните все обязательные поля');
+      return;
     }
 
+    setLoading(true);
     try {
-      setLoading(true)
       const response = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientId: selectedClient.id,
-          serviceId: appointmentData.serviceId,
-          date: appointmentData.date,
-          startTime: appointmentData.startTime,
-          endTime: appointmentData.endTime,
-          status: appointmentData.status
+          serviceId: selectedService.id,
+          date: appointmentDate,  // API ждёт "date" а не "appointmentDate"!
+          startTime,
+          endTime,
+          status: 'scheduled'
         })
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
       if (response.ok && data.success) {
-        alert('Запись успешно создана!')
-        onSuccess?.()
-        onClose()
+        alert('Запись успешно создана!');
+        onSuccess();
+        onClose();
       } else {
-        alert(data.error || 'Ошибка создания записи')
+        alert(data.error || 'Ошибка создания записи');
       }
     } catch (error) {
-      console.error('Ошибка:', error)
-      alert('Ошибка создания записи')
+      console.error('Ошибка:', error);
+      alert('Ошибка создания записи');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const resetForm = () => {
-    setStep(1)
-    setSearchQuery('')
-    setClients([])
-    setSelectedClient(null)
-    setIsCreatingClient(false)
-    setServiceSearch('')
-    setAppointmentData({
-      date: selectedDate || new Date().toISOString().split('T')[0],
-      startTime: '09:00',
-      endTime: '10:00',
-      serviceId: '',
-      status: 'SCHEDULED'
-    })
+    setStep(1);
+    setSearchQuery('');
+    setClients([]);
+    setSelectedClient(null);
+    setIsCreatingClient(false);
+    setSelectedService(null);
+    setAppointmentDate('');
+    setStartTime('09:00');
+    setEndTime('10:00');
+    setNotes('');
     setNewClientData({
       firstName: '',
       lastName: '',
       phone: '',
       email: ''
-    })
-  }
+    });
+  };
 
   const handleClose = () => {
-    resetForm()
-    onClose()
-  }
+    resetForm();
+    onClose();
+  };
 
-  if (!isOpen) return null
-
-  const selectedService = services.find(s => s.id === appointmentData.serviceId)
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
-        {/* Шапка */}
+        {/* Шапка - ЕДИНЫЙ СТИЛЬ */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Новая запись</h2>
@@ -245,7 +221,7 @@ export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: A
           </button>
         </div>
 
-        {/* Прогресс */}
+        {/* Прогресс - ЕДИНЫЙ СТИЛЬ */}
         <div className="px-6 py-4 bg-gray-50">
           <div className="flex items-center justify-between relative">
             <div className="absolute top-5 left-0 right-0 h-1 bg-gray-200">
@@ -287,8 +263,8 @@ export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: A
                   placeholder="Поиск по имени или телефону..."
                   value={searchQuery}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    searchClients(e.target.value)
+                    setSearchQuery(e.target.value);
+                    searchClients(e.target.value);
                   }}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -424,103 +400,58 @@ export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: A
             </div>
           )}
 
-          {/* Шаг 2: Детали записи */}
+          {/* Шаг 2: Детали */}
           {step === 2 && (
-            <div className="space-y-6">
-              {/* Услуга с поиском */}
+            <div className="space-y-4">
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <Wrench className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">Выберите услугу</h3>
-                </div>
-
-                <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <input
-                    type="text"
-                    placeholder="Поиск услуги..."
-                    value={serviceSearch}
-                    onChange={(e) => setServiceSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-                  {filteredServices.map((service) => (
-                    <div
-                      key={service.id}
-                      onClick={() => handleServiceSelect(service.id)}
-                      className={`p-4 border rounded-xl cursor-pointer transition-all ${
-                        appointmentData.serviceId === service.id
-                          ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-200'
-                          : 'border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-gray-900">{service.name}</p>
-                          <p className="text-xs text-gray-500">{service.category}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-gray-900">{service.price.toLocaleString()} ₽</p>
-                          <p className="text-xs text-gray-500">{service.duration} мин</p>
-                        </div>
-                      </div>
-                    </div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Услуга *</label>
+                <select
+                  value={selectedService?.id || ''}
+                  onChange={(e) => {
+                    const service = services.find(s => s.id === e.target.value);
+                    setSelectedService(service || null);
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Выберите услугу</option>
+                  {services.map(service => (
+                    <option key={service.id} value={service.id}>
+                      {service.name} ({service.duration} мин, {service.price}₽)
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
-              {/* Дата и время */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Calendar className="inline w-4 h-4 mr-1" />
-                    Дата
-                  </label>
-                  <input
-                    type="date"
-                    value={appointmentData.date}
-                    onChange={(e) => setAppointmentData(prev => ({ ...prev, date: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Дата *</label>
+                <input
+                  type="date"
+                  value={appointmentDate}
+                  onChange={(e) => setAppointmentDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Clock className="inline w-4 h-4 mr-1" />
-                    Начало
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Время начала *</label>
                   <input
                     type="time"
-                    value={appointmentData.startTime}
-                    onChange={(e) => setAppointmentData(prev => ({ ...prev, startTime: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Clock className="inline w-4 h-4 mr-1" />
-                    Конец
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Время окончания</label>
                   <input
                     type="time"
-                    value={appointmentData.endTime}
-                    onChange={(e) => setAppointmentData(prev => ({ ...prev, endTime: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={endTime}
+                    readOnly
+                    className="w-full px-4 py-2 border border-gray-300 rounded-xl bg-gray-50 text-gray-600"
                   />
                 </div>
               </div>
-
-              {/* Итоговая информация */}
-              {selectedService && (
-                <div className="p-4 bg-gray-50 rounded-xl">
-                  <p className="text-sm text-gray-700 mb-2">Итого:</p>
-                  <p className="text-2xl font-bold text-gray-900">{selectedService.price.toLocaleString()} ₽</p>
-                  <p className="text-sm text-gray-500">Длительность: {selectedService.duration} минут</p>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -557,7 +488,7 @@ export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: A
             ) : step === 2 ? (
               <button
                 onClick={handleSubmit}
-                disabled={loading || !appointmentData.serviceId}
+                disabled={loading || !selectedClient || !selectedService}
                 className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Создание...' : 'Создать запись'}
@@ -567,5 +498,5 @@ export function AppointmentModal({ isOpen, onClose, onSuccess, selectedDate }: A
         </div>
       </div>
     </div>
-  )
+  );
 }
