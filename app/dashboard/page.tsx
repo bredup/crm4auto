@@ -69,7 +69,7 @@ export default function DashboardPage() {
       
       const [statsRes, appointmentsRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
-        fetch('/api/appointments'), // Без фильтра - все записи
+        fetch('/api/appointments'),
       ]);
 
       if (statsRes.ok) {
@@ -79,11 +79,10 @@ export default function DashboardPage() {
 
       if (appointmentsRes.ok) {
         const appointmentsData = await appointmentsRes.json();
-        // API возвращает {success: true, appointments: [...]}
         if (appointmentsData.success) {
           const formattedAppointments = appointmentsData.appointments.map((apt: any) => ({
             ...apt,
-            appointmentDate: new Date(apt.date), // Конвертируем date в appointmentDate
+            appointmentDate: new Date(apt.date),
           }));
           setAppointments(formattedAppointments);
         }
