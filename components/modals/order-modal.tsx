@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Search, Car, User, Wrench, Plus } from 'lucide-react'
+import { X, Search, Car, User, Wrench, Plus, Trash2 } from 'lucide-react'
 
 interface OrderModalProps {
   isOpen: boolean
@@ -32,11 +32,41 @@ interface Service {
   category: string
 }
 
+const formatPhone = (value: string): string => {
+  const cleaned = value.replace(/\D/g, '');
+  let digits = cleaned;
+  if (digits.startsWith('8')) {
+    digits = '7' + digits.slice(1);
+  }
+  if (!digits.startsWith('7')) {
+    digits = '7' + digits;
+  }
+  if (digits.length >= 1) {
+    let formatted = '+7';
+    if (digits.length > 1) {
+      formatted += ' (' + digits.slice(1, 4);
+      if (digits.length >= 4) {
+        formatted += ')';
+      }
+      if (digits.length > 4) {
+        formatted += ' ' + digits.slice(4, 7);
+      }
+      if (digits.length > 7) {
+        formatted += '-' + digits.slice(7, 9);
+      }
+      if (digits.length > 9) {
+        formatted += '-' + digits.slice(9, 11);
+      }
+    }
+    return formatted;
+  }
+  return value;
+};
+
 export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   
-  // Шаг 1: Клиент
   const [searchQuery, setSearchQuery] = useState('')
   const [clients, setClients] = useState<Client[]>([])
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
@@ -45,10 +75,14 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
     firstName: '',
     lastName: '',
     phone: '',
-    email: ''
+    email: '',
+    addVehicle: false,
+    vehicleBrand: '',
+    vehicleModel: '',
+    vehicleYear: new Date().getFullYear(),
+    vehicleLicensePlate: ''
   })
   
-  // Шаг 2: Автомобиль
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [isCreatingVehicle, setIsCreatingVehicle] = useState(false)
@@ -59,7 +93,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
     licensePlate: ''
   })
   
-  // Шаг 3: Услуги
   const [serviceSearch, setServiceSearch] = useState('')
   const [services, setServices] = useState<Service[]>([])
   const [filteredServices, setFilteredServices] = useState<Service[]>([])
@@ -85,8 +118,8 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
   useEffect(() => {
     if (serviceSearch) {
       const filtered = services.filter(service => 
-        service.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-        service.category.toLowerCase().includes(serviceSearch.toLowerCase())
+        service.name?.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+        service.category?.toLowerCase().includes(serviceSearch.toLowerCase())
       )
       setFilteredServices(filtered)
     } else {
@@ -115,37 +148,79 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
   }
 
   const createClient = async () => {
-    if (!newClientData.firstName || !newClientData.lastName || !newClientData.phone) {
-      alert('Заполните все обязательные поля')
-      return
+    const phoneDigits = newClientData.phone.replace(/\D/g, '');
+    
+    if (!newClientData.firstName.trim() || !newClientData.lastName.trim() || phoneDigits.length < 10) {
+      alert('Заполните все обязательные поля корректно');
+      return;
+    }
+
+    // Если включено добавление авто, проверяем его поля
+    if (newClientData.addVehicle) {
+      if (!newClientData.vehicleBrand.trim() || !newClientData.vehicleModel.trim()) {
+        alert('Заполните данные автомобиля');
+        return;
+      }
     }
 
     try {
-      setLoading(true)
+      setLoading(true);
       const response = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newClientData)
-      })
+        body: JSON.stringify({
+          firstName: newClientData.firstName,
+          lastName: newClientData.lastName,
+          phone: newClientData.phone,
+          email: newClientData.email
+        })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
       if (data.success) {
         const clientWithName = {
           ...data.client,
           name: `${data.client.firstName || ''} ${data.client.lastName || ''}`.trim() || data.client.name
+        };
+        setSelectedClient(clientWithName);
+
+        // Если нужно создать автомобиль
+        if (newClientData.addVehicle) {
+          const vehicleResponse = await fetch('/api/vehicles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientId: clientWithName.id,
+              brand: newClientData.vehicleBrand,
+              model: newClientData.vehicleModel,
+              year: newClientData.vehicleYear,
+              licensePlate: newClientData.vehicleLicensePlate
+            })
+          });
+
+          const vehicleData = await vehicleResponse.json();
+          if (vehicleData.success) {
+            setSelectedVehicle(vehicleData.vehicle);
+            setStep(3); // Сразу на шаг 3 (услуги)
+          } else {
+            alert('Клиент создан, но ошибка при создании автомобиля');
+            setStep(2); // На шаг выбора авто
+          }
+        } else {
+          setStep(2); // На шаг выбора авто
         }
-        setSelectedClient(clientWithName)
-        setIsCreatingClient(false)
+        
+        setIsCreatingClient(false);
       } else {
-        alert(data.error || 'Ошибка создания клиента')
+        alert(data.error || 'Ошибка создания клиента');
       }
     } catch (error) {
-      console.error('Ошибка:', error)
-      alert('Ошибка создания клиента')
+      console.error('Ошибка:', error);
+      alert('Ошибка создания клиента');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const loadVehicles = async () => {
     if (!selectedClient) return
@@ -210,15 +285,15 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
     }
   }
 
-  const toggleService = (service: Service) => {
-    setSelectedServices(prev => {
-      const exists = prev.find(s => s.id === service.id)
-      if (exists) {
-        return prev.filter(s => s.id !== service.id)
-      } else {
-        return [...prev, service]
-      }
-    })
+  const addService = (service: Service) => {
+    if (!selectedServices.find(s => s.id === service.id)) {
+      setSelectedServices(prev => [...prev, service])
+      setServiceSearch('')
+    }
+  }
+
+  const removeService = (serviceId: string) => {
+    setSelectedServices(prev => prev.filter(s => s.id !== serviceId))
   }
 
   const calculateTotal = () => {
@@ -286,7 +361,12 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
       firstName: '',
       lastName: '',
       phone: '',
-      email: ''
+      email: '',
+      addVehicle: false,
+      vehicleBrand: '',
+      vehicleModel: '',
+      vehicleYear: new Date().getFullYear(),
+      vehicleLicensePlate: ''
     })
     setNewVehicleData({
       brand: '',
@@ -306,7 +386,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
-        {/* Шапка */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Новый заказ-наряд</h2>
@@ -320,7 +399,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
           </button>
         </div>
 
-        {/* Прогресс */}
         <div className="px-6 py-4 bg-gray-50">
           <div className="flex items-center justify-between relative">
             <div className="absolute top-5 left-0 right-0 h-1 bg-gray-200">
@@ -345,9 +423,7 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
           </div>
         </div>
 
-        {/* Контент */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-250px)]">
-          {/* Шаг 1: Клиент */}
           {step === 1 && !isCreatingClient && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-4">
@@ -428,7 +504,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
             </div>
           )}
 
-          {/* Форма создания клиента */}
           {step === 1 && isCreatingClient && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-4">
@@ -464,9 +539,13 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
                 <input
                   type="tel"
                   value={newClientData.phone}
-                  onChange={(e) => setNewClientData(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => {
+                    const formatted = formatPhone(e.target.value);
+                    setNewClientData(prev => ({ ...prev, phone: formatted }));
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="+7 (999) 123-45-67"
+                  maxLength={18}
                 />
               </div>
 
@@ -480,6 +559,76 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
                   placeholder="client@example.com"
                 />
               </div>
+
+              <div className="border-t pt-4">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newClientData.addVehicle}
+                    onChange={(e) => setNewClientData(prev => ({ ...prev, addVehicle: e.target.checked }))}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Добавить автомобиль сразу
+                  </span>
+                </label>
+              </div>
+
+              {newClientData.addVehicle && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-xl">
+                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Car className="w-4 h-4" />
+                    Данные автомобиля
+                  </h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Марка *</label>
+                      <input
+                        type="text"
+                        value={newClientData.vehicleBrand}
+                        onChange={(e) => setNewClientData(prev => ({ ...prev, vehicleBrand: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Toyota"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Модель *</label>
+                      <input
+                        type="text"
+                        value={newClientData.vehicleModel}
+                        onChange={(e) => setNewClientData(prev => ({ ...prev, vehicleModel: e.target.value }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Camry"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Год</label>
+                      <input
+                        type="number"
+                        value={newClientData.vehicleYear}
+                        onChange={(e) => setNewClientData(prev => ({ ...prev, vehicleYear: parseInt(e.target.value) }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="1900"
+                        max={new Date().getFullYear() + 1}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Гос. номер</label>
+                      <input
+                        type="text"
+                        value={newClientData.vehicleLicensePlate}
+                        onChange={(e) => setNewClientData(prev => ({ ...prev, vehicleLicensePlate: e.target.value.toUpperCase() }))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="А123БВ777"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <button
@@ -499,7 +648,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
             </div>
           )}
 
-          {/* Шаг 2: Автомобиль */}
           {step === 2 && !isCreatingVehicle && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-4">
@@ -564,7 +712,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
             </div>
           )}
 
-          {/* Форма создания автомобиля */}
           {step === 2 && isCreatingVehicle && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-4">
@@ -637,7 +784,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
             </div>
           )}
 
-          {/* Шаг 3: Услуги */}
           {step === 3 && (
             <div className="space-y-6">
               <div className="flex items-center gap-2 mb-4">
@@ -649,49 +795,71 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="text"
-                  placeholder="Поиск услуги..."
+                  placeholder="Поиск услуги для добавления..."
                   value={serviceSearch}
                   onChange={(e) => setServiceSearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {filteredServices.map((service) => {
-                  const isSelected = selectedServices.some(s => s.id === service.id)
-                  return (
+              {serviceSearch && filteredServices.length > 0 && (
+                <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-xl p-2">
+                  {filteredServices.map((service) => (
                     <div
                       key={service.id}
-                      onClick={() => toggleService(service)}
-                      className={`p-4 border rounded-xl cursor-pointer transition-all ${
-                        isSelected 
-                          ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-200' 
-                          : 'border-gray-200 hover:bg-gray-50'
-                      }`}
+                      onClick={() => addService(service)}
+                      className="p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-all"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <p className="font-semibold text-gray-900">{service.name}</p>
+                          <p className="font-semibold text-gray-900 text-sm">{service.name}</p>
                           <p className="text-xs text-gray-500">{service.category}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-gray-900">{service.price.toLocaleString()} ₽</p>
+                        <div className="text-right ml-2">
+                          <p className="font-bold text-gray-900 text-sm">{service.price.toLocaleString()} ₽</p>
                           <p className="text-xs text-gray-500">{service.duration} мин</p>
                         </div>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {selectedServices.length > 0 && (
-                <div className="p-4 bg-gray-50 rounded-xl">
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    Выбрано услуг: {selectedServices.length}
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {calculateTotal().toLocaleString()} ₽
-                  </p>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-700">Выбранные услуги:</h4>
+                  {selectedServices.map((service) => (
+                    <div
+                      key={service.id}
+                      className="p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900">{service.name}</p>
+                        <p className="text-xs text-gray-500">{service.category}</p>
+                      </div>
+                      <div className="text-right mr-3">
+                        <p className="font-bold text-gray-900">{service.price.toLocaleString()} ₽</p>
+                        <p className="text-xs text-gray-500">{service.duration} мин</p>
+                      </div>
+                      <button
+                        onClick={() => removeService(service.id)}
+                        className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+
+                  <div className="p-4 bg-gray-50 rounded-xl border-t-2 border-blue-600">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-gray-700">
+                        Услуг: {selectedServices.length}
+                      </p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {calculateTotal().toLocaleString()} ₽
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -756,7 +924,6 @@ export function OrderModal({ isOpen, onClose, onSuccess }: OrderModalProps) {
           )}
         </div>
 
-        {/* Футер */}
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
           <div>
             {step > 1 && !isCreatingClient && !isCreatingVehicle && (

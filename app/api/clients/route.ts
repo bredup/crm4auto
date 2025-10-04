@@ -45,30 +45,43 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, phone, email, address, notes } = body;
+    const { name, firstName, lastName, phone, email, address, notes } = body;
 
-    if (!name || !phone) {
+    // Формируем имя из firstName + lastName или используем name
+    const clientName = name || `${firstName || ''} ${lastName || ''}`.trim();
+
+    if (!clientName || !phone) {
       return NextResponse.json(
         { success: false, error: 'Имя и телефон обязательны' },
         { status: 400 }
       );
     }
 
-    console.log('🆕 Создание клиента:', { name, phone, email });
+    // Очищаем телефон от форматирования для проверки
+    const cleanPhone = phone.replace(/\D/g, '');
+    
+    if (cleanPhone.length < 10) {
+      return NextResponse.json(
+        { success: false, error: 'Некорректный номер телефона' },
+        { status: 400 }
+      );
+    }
 
-    // Проверяем существование клиента с таким телефоном
-    const existingClient = await db.client.findFirst({
-      where: { phone }
-    });
+    console.log('🆕 Создание клиента:', { name: clientName, phone, email });
+
+    // Проверяем существование клиента с таким телефоном (по очищенным цифрам)
+    const allClients = await db.client.findMany();
+    const existingClient = allClients.find(c => c.phone.replace(/\D/g, '') === cleanPhone);
 
     if (existingClient) {
       console.log('ℹ️ Клиент с таким телефоном уже существует, возвращаем его');
-      // ВАЖНО: Возвращаем существующего клиента вместо ошибки
       return NextResponse.json({ 
         success: true, 
         client: {
           id: existingClient.id,
           name: existingClient.name,
+          firstName: existingClient.name.split(' ')[0] || '',
+          lastName: existingClient.name.split(' ').slice(1).join(' ') || '',
           phone: existingClient.phone,
           email: existingClient.email
         },
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Создаём нового клиента
     const client = await db.client.create({
       data: {
-        name,
+        name: clientName,
         phone,
         email: email || null,
         address: address || null,
@@ -94,6 +107,8 @@ export async function POST(request: NextRequest) {
       client: {
         id: client.id,
         name: client.name,
+        firstName: firstName || client.name.split(' ')[0] || '',
+        lastName: lastName || client.name.split(' ').slice(1).join(' ') || '',
         phone: client.phone,
         email: client.email
       }

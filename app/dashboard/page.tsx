@@ -18,6 +18,9 @@ import {
 } from 'lucide-react'
 import { AppointmentModal } from '@/components/modals/appointment-modal'
 import { OrderModal } from '@/components/modals/order-modal'
+import { AppointmentDetailModal } from '@/components/modals/appointment-detail-modal'
+import { EditAppointmentModal } from '@/components/modals/edit-appointment-modal'
+import { OrderDetailModal } from '@/components/modals/order-detail-modal'
 
 interface DashboardStats {
   totalClients: number
@@ -29,23 +32,6 @@ interface DashboardStats {
     orders: number
     vehicles: number
   }
-}
-
-interface RecentOrder {
-  id: string
-  clientName: string
-  clientPhone: string
-  vehicleInfo: string
-  plateNumber?: string
-  serviceType: string
-  description?: string
-  status: string
-  priority: string
-  totalCost: number
-  createdAt: string
-  startDate?: string
-  completedAt?: string
-  assignedTo: string
 }
 
 interface AppointmentsByDate {
@@ -77,6 +63,7 @@ interface Appointment {
     name: string
     price: number
     duration: number
+    category?: string
   }
 }
 
@@ -84,14 +71,18 @@ export default function DashboardPage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
   const [appointments, setAppointments] = useState<AppointmentsByDate>({})
-  const [recentAppointments, setRecentAppointments] = useState<Appointment[]>([])
+  const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([])
   const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([])
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
   const [loading, setLoading] = useState(true)
   
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false)
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isOrderDetailModalOpen, setIsOrderDetailModalOpen] = useState(false)
+  const [createdOrderId, setCreatedOrderId] = useState<string | null>(null)
 
   useEffect(() => {
     loadDashboardData()
@@ -105,9 +96,8 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       
-      const [statsResponse, ordersResponse, appointmentsResponse] = await Promise.all([
+      const [statsResponse, appointmentsResponse] = await Promise.all([
         fetch('/api/dashboard/stats'),
-        fetch('/api/orders/recent'),
         fetch('/api/appointments')
       ])
       
@@ -115,20 +105,19 @@ export default function DashboardPage() {
         const statsData = await statsResponse.json()
         setStats(statsData)
       }
-      
-      if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json()
-        setRecentOrders(ordersData)
-      }
 
       if (appointmentsResponse.ok) {
         const appointmentsData = await appointmentsResponse.json()
         if (appointmentsData.success && appointmentsData.appointments) {
-          const sorted = [...appointmentsData.appointments]
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .slice(0, 10)
-          setRecentAppointments(sorted)
-          setFilteredAppointments(sorted)
+          const today = new Date()
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+          
+          const todayAppts = appointmentsData.appointments.filter((apt: Appointment) => 
+            apt.date === todayStr
+          ).sort((a: Appointment, b: Appointment) => a.startTime.localeCompare(b.startTime))
+          
+          setTodayAppointments(todayAppts)
+          setFilteredAppointments(todayAppts)
         }
       }
       
@@ -160,6 +149,84 @@ export default function DashboardPage() {
 
   const handleOrderCreated = () => {
     loadDashboardData()
+  }
+
+  const handleAppointmentClick = (appointment: Appointment) => {
+    setSelectedAppointment(appointment)
+    setIsDetailModalOpen(true)
+  }
+
+  const handleCreateOrderFromAppointment = async (appointmentId: string): Promise<string> => {
+    try {
+      const appointment = selectedAppointment
+      if (!appointment) throw new Error('Запись не найдена')
+
+      const orderData = {
+        clientId: appointment.client.id,
+        vehicleId: appointment.vehicle?.id || null,
+        description: `Заказ-наряд из записи: ${appointment.service.name}`,
+        priority: 'NORMAL',
+        estimatedCost: appointment.service.price,
+        estimatedDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        notes: `Создано из записи #${appointmentId}. Услуга: ${appointment.service.name}`
+      }
+
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData)
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // API возвращает просто объект заказа, не { order: ... }
+        const orderId = data.id
+        
+        loadDashboardData()
+        setIsDetailModalOpen(false)
+        
+        setCreatedOrderId(orderId)
+        setIsOrderDetailModalOpen(true)
+        
+        return orderId
+      } else {
+        throw new Error('Ошибка создания заказа')
+      }
+    } catch (error) {
+      console.error('Ошибка создания заказа:', error)
+      throw error
+    }
+  }
+
+  const handleEditAppointment = (appointment: Appointment) => {
+    setSelectedAppointment(appointment)
+    setIsDetailModalOpen(false)
+    setIsEditModalOpen(true)
+  }
+
+  const handleEditSuccess = () => {
+    loadDashboardData()
+    loadAppointments(currentDate)
+    setIsEditModalOpen(false)
+  }
+
+  const handleDeleteAppointment = async (appointmentId: string) => {
+    try {
+      const response = await fetch(`/api/appointments/${appointmentId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        loadDashboardData()
+        loadAppointments(currentDate)
+        setIsDetailModalOpen(false)
+      } else {
+        throw new Error('Ошибка удаления записи')
+      }
+    } catch (error) {
+      console.error('Ошибка удаления:', error)
+      throw error
+    }
   }
 
   const getStatsCards = () => {
@@ -219,11 +286,6 @@ export default function DashboardPage() {
 
   const getStatusColor = (status: string) => {
     const statusColors = {
-      'new': 'bg-blue-100 text-blue-800',
-      'in_progress': 'bg-yellow-100 text-yellow-800',
-      'completed': 'bg-green-100 text-green-800',
-      'cancelled': 'bg-red-100 text-red-800',
-      'pending': 'bg-gray-100 text-gray-800',
       'SCHEDULED': 'bg-blue-100 text-blue-800',
       'CONFIRMED': 'bg-green-100 text-green-800',
       'IN_PROGRESS': 'bg-yellow-100 text-yellow-800',
@@ -231,15 +293,6 @@ export default function DashboardPage() {
       'CANCELLED': 'bg-red-100 text-red-800',
     }
     return statusColors[status as keyof typeof statusColors] || 'bg-gray-100 text-gray-800'
-  }
-
-  const getPriorityColor = (priority: string) => {
-    const priorityColors = {
-      'high': 'bg-red-100 text-red-800',
-      'medium': 'bg-yellow-100 text-yellow-800',
-      'low': 'bg-green-100 text-green-800'
-    }
-    return priorityColors[priority as keyof typeof priorityColors] || 'bg-gray-100 text-gray-800'
   }
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -284,7 +337,6 @@ export default function DashboardPage() {
     return days
   }
 
-  // При клике на день - фильтруем записи
   const handleDayClick = (date: Date, dayAppointments: Appointment[]) => {
     setSelectedDate(date)
     setFilteredAppointments(dayAppointments)
@@ -307,7 +359,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Заголовок с кнопками */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Главная панель</h1>
         <div className="flex items-center gap-3">
@@ -328,7 +379,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Статистика */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statsCards.map((card, index) => {
           const Icon = card.icon
@@ -356,7 +406,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Календарь - 2 колонки */}
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900">Календарь записей</h2>
@@ -424,13 +473,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Список записей справа - 1 колонка */}
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900">
               {selectedDate 
                 ? `Записи на ${format(selectedDate, 'd MMM', { locale: ru })}`
-                : 'Последние записи'
+                : 'Записи на сегодня'
               }
             </h2>
             <div className="flex items-center gap-2">
@@ -438,7 +486,7 @@ export default function DashboardPage() {
                 <button
                   onClick={() => {
                     setSelectedDate(null)
-                    setFilteredAppointments(recentAppointments)
+                    setFilteredAppointments(todayAppointments)
                   }}
                   className="text-xs text-gray-500 hover:text-gray-700"
                 >
@@ -460,7 +508,8 @@ export default function DashboardPage() {
               filteredAppointments.map((appointment) => (
                 <div 
                   key={appointment.id} 
-                  className="p-3 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors"
+                  onClick={() => handleAppointmentClick(appointment)}
+                  className="p-3 border border-gray-100 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer"
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
@@ -486,14 +535,13 @@ export default function DashboardPage() {
               ))
             ) : (
               <p className="text-gray-500 text-center py-8 text-sm">
-                {selectedDate ? 'Нет записей на этот день' : 'Нет записей'}
+                {selectedDate ? 'Нет записей на этот день' : 'Нет записей на сегодня'}
               </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* Модальные окна */}
       <AppointmentModal
         isOpen={isAppointmentModalOpen}
         onClose={() => setIsAppointmentModalOpen(false)}
@@ -504,6 +552,32 @@ export default function DashboardPage() {
         isOpen={isOrderModalOpen}
         onClose={() => setIsOrderModalOpen(false)}
         onSuccess={handleOrderCreated}
+      />
+
+      <AppointmentDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        appointment={selectedAppointment}
+        onCreateOrder={handleCreateOrderFromAppointment}
+        onDelete={handleDeleteAppointment}
+        onEdit={handleEditAppointment}
+      />
+
+      <EditAppointmentModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSuccess={handleEditSuccess}
+        appointment={selectedAppointment}
+      />
+
+      <OrderDetailModal
+        isOpen={isOrderDetailModalOpen}
+        onClose={() => {
+          setIsOrderDetailModalOpen(false)
+          setCreatedOrderId(null)
+        }}
+        orderId={createdOrderId}
+        onUpdate={loadDashboardData}
       />
     </div>
   )

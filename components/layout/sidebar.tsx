@@ -58,11 +58,6 @@ const navigation: NavItem[] = [
     icon: UserCircle,
   },
   {
-    title: 'Автомобили',
-    href: '/dashboard/vehicles',
-    icon: Car,
-  },
-  {
     title: 'Заказ-наряды',
     href: '/dashboard/orders',
     icon: FileText,
@@ -73,6 +68,11 @@ const navigation: NavItem[] = [
     href: '#',
     icon: Package,
     children: [
+      {
+        title: 'Автомобили',
+        href: '/dashboard/vehicles',
+        icon: Car,
+      },
       {
         title: 'Услуги',
         href: '/dashboard/services',
@@ -98,7 +98,6 @@ export function Sidebar({ isOpen, onClose, className }: SidebarProps) {
   const { data: session } = useSession()
   const [expandedItems, setExpandedItems] = useState<string[]>(['Справочники'])
 
-  // Фильтрация навигации по ролям пользователя
   const getFilteredNavigation = () => {
     const userRole = session?.user?.role || 'user'
     
@@ -197,7 +196,6 @@ export function Sidebar({ isOpen, onClose, className }: SidebarProps) {
 
   return (
     <nav className={cn('flex flex-col h-full bg-gray-800', className)}>
-      {/* Header внутри сайдбара для мобильных */}
       {isOpen !== undefined && (
         <div className="p-4 border-b border-gray-700 lg:hidden">
           <div className="flex items-center justify-between">
@@ -211,14 +209,11 @@ export function Sidebar({ isOpen, onClose, className }: SidebarProps) {
         </div>
       )}
 
-      {/* Навигационные элементы */}
       <div className="flex-1 space-y-1 p-4 pb-2">
         {getFilteredNavigation().map(item => renderNavItem(item))}
       </div>
 
-      {/* Footer с версией CRM - приподнят */}
       <div className="p-4 pt-2 border-t border-gray-700">
-        {/* Версия CRM */}
         <div className="text-center">
           <p className="text-sm font-medium text-gray-300">CRM4Auto</p>
           <p className="text-xs text-gray-500">Версия 1.0.0</p>

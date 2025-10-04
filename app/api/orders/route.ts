@@ -15,8 +15,14 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10')
     const search = searchParams.get('search') || ''
     const status = searchParams.get('status') || ''
+    const clientId = searchParams.get('clientId') || ''
 
     let where: any = {}
+    
+    // Фильтр по клиенту (ВАЖНО!)
+    if (clientId) {
+      where.clientId = clientId
+    }
     
     if (status) {
       where.status = status
@@ -92,7 +98,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Генерируем номер заказ-наряда
     const orderCount = await db.order.count()
     const orderNumber = `ORD-${new Date().getFullYear()}-${String(orderCount + 1).padStart(4, '0')}`
 
@@ -121,8 +126,6 @@ export async function POST(request: NextRequest) {
         }
       }
     })
-
-    // Создаем запись в истории статусов
 
     return NextResponse.json(order, { status: 201 })
   } catch (error) {

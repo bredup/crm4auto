@@ -1,76 +1,89 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Plus, Search, Phone, Mail, MapPin, Car, FileText, Users, RefreshCw, X } from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { Plus, Search, Phone, Mail, MapPin, Users } from 'lucide-react'
+import { ClientDetailModal } from '@/components/modals/client-detail-modal'
 
 interface Client {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string;
-  address: string | null;
-  notes: string | null;
-  vehiclesCount: number;
-  ordersCount: number;
-  createdAt: string;
+  id: string
+  name: string
+  email: string | null
+  phone: string
+  address: string | null
+  createdAt: string
 }
 
 export default function ClientsPage() {
-  const router = useRouter();
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  const [showCreateForm, setShowCreateForm] = useState(false)
 
-  // Форма для клиента
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
+  const [newClient, setNewClient] = useState({
+    firstName: '',
+    lastName: '',
     phone: '',
+    email: '',
     address: '',
     notes: ''
-  });
+  })
 
   const fetchClients = async () => {
     try {
-      const params = new URLSearchParams();
-      if (search) params.append('search', search);
+      const params = new URLSearchParams()
+      if (search) params.append('search', search)
       
-      const response = await fetch(`/api/clients?${params}`);
+      const response = await fetch(`/api/clients?${params}`)
       if (response.ok) {
-        const data = await response.json();
-        setClients(data.clients || []);
+        const data = await response.json()
+        setClients(data.clients || [])
       }
     } catch (error) {
-      console.error('Error fetching clients:', error);
+      console.error('Error fetching clients:', error)
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setLoading(false)
     }
+  }
+
+  const formatPhone = (value: string): string => {
+    const cleaned = value.replace(/\D/g, '');
+    let digits = cleaned;
+    if (digits.startsWith('8')) {
+      digits = '7' + digits.slice(1);
+    }
+    if (!digits.startsWith('7')) {
+      digits = '7' + digits;
+    }
+    if (digits.length >= 1) {
+      let formatted = '+7';
+      if (digits.length > 1) {
+        formatted += ' (' + digits.slice(1, 4);
+        if (digits.length >= 4) {
+          formatted += ')';
+        }
+        if (digits.length > 4) {
+          formatted += ' ' + digits.slice(4, 7);
+        }
+        if (digits.length > 7) {
+          formatted += '-' + digits.slice(7, 9);
+        }
+        if (digits.length > 9) {
+          formatted += '-' + digits.slice(9, 11);
+        }
+      }
+      return formatted;
+    }
+    return value;
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchClients();
-  };
-
-  const openCreateModal = () => {
-    setFormData({ name: '', email: '', phone: '', address: '', notes: '' });
-    setShowCreateModal(true);
-  };
-
-  const closeModals = () => {
-    setShowCreateModal(false);
-    setFormData({ name: '', email: '', phone: '', address: '', notes: '' });
-  };
-
-  const handleCreateClient = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const createClient = async (e: React.FormEvent) => {
+    e.preventDefault()
     
-    if (!formData.name || !formData.phone) {
-      alert('Заполните обязательные поля');
+    const phoneDigits = newClient.phone.replace(/\D/g, '');
+    if (!newClient.firstName.trim() || !newClient.lastName.trim() || phoneDigits.length < 10) {
+      alert('Заполните все обязательные поля корректно');
       return;
     }
 
@@ -78,76 +91,62 @@ export default function ClientsPage() {
       const response = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
+        body: JSON.stringify(newClient)
+      })
 
-      const data = await response.json();
-
-      if (data.success || response.ok) {
-        closeModals();
-        fetchClients();
-      } else {
-        alert(data.error || 'Ошибка создания клиента');
+      if (response.ok) {
+        setShowCreateForm(false)
+        setNewClient({ firstName: '', lastName: '', phone: '', email: '', address: '', notes: '' })
+        fetchClients()
       }
     } catch (error) {
-      console.error('Error creating client:', error);
-      alert('Ошибка создания клиента');
+      console.error('Error creating client:', error)
     }
-  };
+  }
+
+  const handleClientClick = (client: Client) => {
+    setSelectedClient(client)
+    setIsDetailModalOpen(true)
+  }
+
+  const handleModalClose = () => {
+    setIsDetailModalOpen(false)
+    setSelectedClient(null)
+    fetchClients()
+  }
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchClients();
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [search]);
+    fetchClients()
+  }, [search])
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
+      <div className="flex items-center justify-center min-h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Клиенты</h1>
-          <p className="text-gray-600 mt-1">Управление базой клиентов автосервиса</p>
+          <h1 className="text-3xl font-bold text-gray-900">Клиенты</h1>
+          <p className="text-gray-600">Управление базой клиентов автосервиса</p>
         </div>
-        
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Обновить
-          </button>
-          
-          <button
-            onClick={openCreateModal}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Добавить клиента
-          </button>
-        </div>
+        <button 
+          onClick={() => setShowCreateForm(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Добавить клиента
+        </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
-            type="text"
             placeholder="Поиск по имени, email или телефону..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -156,107 +155,148 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      {/* Stats */}
-      {clients.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between text-sm text-gray-600">
+      {showCreateForm && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Добавить нового клиента</h2>
+          <form onSubmit={createClient} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Имя *</label>
+                <input
+                  required
+                  value={newClient.firstName}
+                  onChange={(e) => setNewClient({...newClient, firstName: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Иван"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Фамилия *</label>
+                <input
+                  required
+                  value={newClient.lastName}
+                  onChange={(e) => setNewClient({...newClient, lastName: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Иванов"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Телефон *</label>
+                <input
+                  required
+                  value={newClient.phone}
+                  onChange={(e) => {
+                    const formatted = formatPhone(e.target.value);
+                    setNewClient({...newClient, phone: formatted});
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+7 (999) 123-45-67"
+                  maxLength={18}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={newClient.email}
+                  onChange={(e) => setNewClient({...newClient, email: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="client@example.com"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Адрес</label>
+                <input
+                  value={newClient.address}
+                  onChange={(e) => setNewClient({...newClient, address: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Город, улица, дом"
+                />
+              </div>
+            </div>
             <div>
-              Всего клиентов: <span className="font-medium text-gray-900">{clients.length}</span>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Заметки</label>
+              <textarea
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                rows={3}
+                value={newClient.notes}
+                onChange={(e) => setNewClient({...newClient, notes: e.target.value})}
+                placeholder="Дополнительная информация о клиенте..."
+              />
             </div>
-            <div className="flex items-center space-x-4">
-              <span>
-                Автомобилей: <span className="font-medium text-blue-600">
-                  {clients.reduce((sum, c) => sum + c.vehiclesCount, 0)}
-                </span>
-              </span>
-              <span>
-                Заказов: <span className="font-medium text-green-600">
-                  {clients.reduce((sum, c) => sum + c.ordersCount, 0)}
-                </span>
-              </span>
+            <div className="flex gap-2">
+              <button 
+                type="submit" 
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Создать клиента
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setShowCreateForm(false)}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* Clients List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="grid gap-4">
         {clients.length > 0 ? (
-          <div className="divide-y divide-gray-200">
-            {clients.map((client) => (
-              <button
-                key={client.id}
-                onClick={() => router.push(`/dashboard/clients/${client.id}`)}
-                className="w-full p-6 text-left hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                      {client.name}
-                    </h3>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Phone className="w-4 h-4 text-gray-400" />
-                        {client.phone}
-                      </div>
-                      
-                      {client.email && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Mail className="w-4 h-4 text-gray-400" />
-                          {client.email}
-                        </div>
-                      )}
-                      
-                      {client.address && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          {client.address}
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Users className="w-4 h-4 text-gray-400" />
-                        Клиент с: {new Date(client.createdAt).toLocaleDateString('ru-RU')}
-                      </div>
+          clients.map((client) => (
+            <div
+              key={client.id}
+              onClick={() => handleClientClick(client)}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    {client.name}
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Phone className="w-4 h-4" />
+                      {client.phone}
                     </div>
-
-                    {client.notes && (
-                      <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">{client.notes}</p>
+                    
+                    {client.email && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Mail className="w-4 h-4" />
+                        {client.email}
                       </div>
                     )}
-
-                    <div className="flex gap-3">
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                        <Car className="w-3 h-3" />
-                        {client.vehiclesCount} авто
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">
-                        <FileText className="w-3 h-3" />
-                        {client.ordersCount} заказов
-                      </span>
+                    
+                    {client.address && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <MapPin className="w-4 h-4" />
+                        {client.address}
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      Клиент с: {new Date(client.createdAt).toLocaleDateString('ru-RU')}
                     </div>
                   </div>
                 </div>
-              </button>
-            ))}
-          </div>
+              </div>
+            </div>
+          ))
         ) : (
-          <div className="text-center py-12">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
             <div className="text-gray-400 mb-4">
               <Users className="w-12 h-12 mx-auto" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {search ? 'Клиенты не найдены' : 'Пока нет клиентов'}
-            </h3>
             <p className="text-gray-500 mb-4">
-              {search ? 'Попробуйте изменить поисковый запрос' : 'Добавьте первого клиента для начала работы'}
+              {search ? 'Клиенты не найдены' : 'Пока нет добавленных клиентов'}
             </p>
             {!search && (
-              <button
-                onClick={openCreateModal}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+              <button 
+                onClick={() => setShowCreateForm(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Добавить первого клиента
@@ -266,114 +306,11 @@ export default function ClientsPage() {
         )}
       </div>
 
-      {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Новый клиент</h2>
-                <button
-                  onClick={closeModals}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleCreateClient} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Имя <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Иван Иванов"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Телефон <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="+7 (999) 123-45-67"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="email@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Адрес
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="г. Москва, ул. Примерная, д. 1"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Заметки
-                </label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Дополнительная информация о клиенте..."
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="flex gap-3 justify-end pt-4">
-                <button
-                  type="button"
-                  onClick={closeModals}
-                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Создать клиента
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ClientDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={handleModalClose}
+        client={selectedClient}
+      />
     </div>
-  );
+  )
 }

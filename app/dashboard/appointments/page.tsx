@@ -17,21 +17,27 @@ interface Service {
   name: string;
   price: number;
   duration: number;
-  category: string;
+  category?: string;
+}
+
+interface Vehicle {
+  id: string;
+  brand: string;
+  model: string;
+  year: number;
+  licensePlate?: string;
 }
 
 interface Appointment {
   id: string;
-  clientId: string;
-  client: Client;
-  serviceId: string;
-  service: Service;
-  vehicleId?: string;
-  appointmentDate: Date;
+  date: string;
   startTime: string;
   endTime: string;
   status: string;
   notes?: string;
+  client: Client;
+  service: Service;
+  vehicle?: Vehicle;
 }
 
 const statusColors = {
@@ -89,7 +95,7 @@ export default function AppointmentsPage() {
       const data = await response.json();
 
       if (data.success) {
-        setAppointments(data.data || []);
+        setAppointments(data.appointments || []);
       } else {
         throw new Error(data.error || 'Ошибка при загрузке записей');
       }
@@ -120,7 +126,7 @@ export default function AppointmentsPage() {
     setIsEditModalOpen(true);
   };
 
-  const formatDate = (dateString: Date | string) => {
+  const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('ru-RU', {
       weekday: 'short',
@@ -152,7 +158,6 @@ export default function AppointmentsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Записи на обслуживание</h1>
@@ -179,7 +184,6 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="flex items-center space-x-4">
           <Filter className="w-5 h-5 text-gray-400" />
@@ -221,7 +225,6 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
-      {/* Error State */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-center">
@@ -238,7 +241,6 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      {/* Appointments List */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         {appointments.length === 0 ? (
           <div className="text-center py-12">
@@ -263,11 +265,10 @@ export default function AppointmentsPage() {
               <div key={appointment.id} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    {/* Main Info */}
                     <div className="flex items-center space-x-4 mb-3">
                       <div className="flex items-center text-gray-900">
                         <Calendar className="w-4 h-4 mr-2 text-gray-400" />
-                        <span className="font-medium">{formatDate(appointment.appointmentDate)}</span>
+                        <span className="font-medium">{formatDate(appointment.date)}</span>
                       </div>
                       
                       <div className="flex items-center text-gray-700">
@@ -278,7 +279,6 @@ export default function AppointmentsPage() {
                       {getStatusBadge(appointment.status)}
                     </div>
 
-                    {/* Client Info */}
                     <div className="flex items-center space-x-4 mb-2">
                       <div className="flex items-center text-gray-800">
                         <User className="w-4 h-4 mr-2 text-gray-400" />
@@ -298,7 +298,6 @@ export default function AppointmentsPage() {
                       )}
                     </div>
 
-                    {/* Service Info */}
                     <div className="flex items-center text-gray-700">
                       <Car className="w-4 h-4 mr-2 text-gray-400" />
                       <span>{appointment.service.name}</span>
@@ -309,7 +308,6 @@ export default function AppointmentsPage() {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="ml-4 flex-shrink-0">
                     <div className="flex items-center space-x-2">
                       <button 
@@ -331,7 +329,6 @@ export default function AppointmentsPage() {
         )}
       </div>
 
-      {/* Stats Footer */}
       {appointments.length > 0 && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between text-sm text-gray-600">
@@ -354,7 +351,6 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      {/* Modals */}
       <AppointmentModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
